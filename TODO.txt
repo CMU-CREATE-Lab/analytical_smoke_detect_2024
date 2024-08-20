@@ -1,0 +1,8 @@
+Version 0.2
+* Use sparse least squares to detect haze locally (i.e. in patches)
+* Combine patches to get a global haze map
+
+
+DONE Version 0.1
+DONE Uses sparse least squares to detect haze in an entire image at once
+

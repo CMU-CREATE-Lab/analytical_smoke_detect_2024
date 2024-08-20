@@ -1,0 +1,9 @@
+jupyter
+ipython
+requests
+pandas
+geopandas
+matplotlib
+folium
+mapclassify
+scipy
