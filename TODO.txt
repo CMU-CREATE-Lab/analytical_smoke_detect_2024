@@ -1,6 +1,14 @@
+Show opacity map with colors and/or contours
+* What subsampling is happening?  Is it nearest neighbor (ugh) or actually low-pass filtering in some way?
+
+
+
 Version 0.2
-* Use sparse least squares to detect haze locally (i.e. in patches)
-* Combine patches to get a global haze map
+DONE Display CPU time for v2 (single)
+DONE Reduce logging for v2 (patches)
+DONE Use sparse least squares to detect haze locally (i.e. in patches)
+DONE Combine patches to get a global haze map
+Commit
 
 
 DONE Version 0.1
