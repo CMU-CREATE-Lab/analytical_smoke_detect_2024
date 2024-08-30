@@ -4,8 +4,10 @@ Be able to see opacity
   Maybe show opacity map (alpha channel) with colors and/or contours?
   Maybe also show color of smoke with alpha=1?
 What subsampling is happening?  Is it nearest neighbor (ugh) or actually low-pass filtering in some way?
-Parallelize v2 patchwise
 See how parallelized v2 scales to larger images
+How much CPU time is used per process?
+
+DONE Parallelize v2 patchwise
 
 BACKLOG:
 Try time-series / video.  Can we do patches for video?

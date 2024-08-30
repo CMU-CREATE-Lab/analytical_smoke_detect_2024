@@ -1,10 +1,12 @@
 import multiprocessing as mp
 import os
-
-from itertools import product
 import math
 import numpy as np
 
+from contextlib import closing
+from itertools import product
+from scipy.sparse import csr_matrix
+from scipy.optimize import lsq_linear
 from common import Stopwatch, gaussian_kernel_2d, solve_haze_detection_v1
 
 PatchWidth = 20     #pixels
@@ -13,14 +15,16 @@ PatchOverlapX = 10  #pixels
 PatchOverlapY = 10  #pixels
 PatchStrideX = PatchWidth - PatchOverlapX
 PatchStrideY = PatchHeight - PatchOverlapY
+PatchWeight = gaussian_kernel_2d(PatchWidth, sigma=PatchWidth / 6.0)
+Lock = None
 
 def _init(haze_img, weight_sum):
-    global Lock, HazeImg, WeightSum, PatchWeight
+    global Lock, HazeImg, WeightSum
 
     HazeImg = haze_img
     WeightSum = weight_sum
 
-    PatchWeight = gaussian_kernel_2d(PatchWidth, sigma=PatchWidth / 6.0)
+    Lock = mp.Lock()
 
 
 def create_shared_array(dtype, shape):
@@ -42,18 +46,19 @@ def shared_to_numpy(shared_arr, dtype, shape):
     return np.frombuffer(shared_arr, dtype=dtype).reshape(shape)
 
 
-def solve_patch_haze_detection(idx):
-    i0, i1, x, y = idx
+def solve_patch_haze_detection_v1(data):
+    i0, i1, x, y = data
     x_end, y_end = x + PatchWidth, y + PatchHeight
     haze_img, weight_sum = shared_to_numpy(*HazeImg), shared_to_numpy(*WeightSum)
     patch_i0, patch_i1 = i0[y:y_end, x:x_end], i1[y:y_end, x:x_end]
     patch_haze = solve_haze_detection_v1(patch_i0, patch_i1, verbose=False)
 
-    haze_img[y:y_end, x:x_end] += patch_haze * PatchWeight[:, :, np.newaxis]
-    weight_sum[y:y_end, x:x_end] += PatchWeight[:, :, np.newaxis]
+    with Lock:
+        haze_img[y:y_end, x:x_end] += patch_haze * PatchWeight[:, :, np.newaxis]
+        weight_sum[y:y_end, x:x_end] += PatchWeight[:, :, np.newaxis]
 
 
-def solve_parallel_haze_detection_v1(i0, i1):
+def detect_haze_parallel_v1(i0, i1):
     height, width = i0.shape[:2]
 
     with Stopwatch(f"solve_haze_detection_v3 {width}x{height}, {width * height} pixels") as st:
@@ -79,7 +84,7 @@ def solve_parallel_haze_detection_v1(i0, i1):
                         (shared_weight_sum, None, (height, width, 1))
                 )
         ) as pool:
-            pool.map(solve_patch_haze_detection, product([i0], [i1], lsx, lsy))
+            pool.map(solve_patch_haze_detection_v1, product([i0], [i1], lsx, lsy))
 
         pool.close()
         pool.join()

@@ -28,6 +28,11 @@ class Stopwatch:
     def set_stats_msg(self, stats_msg):
         self.stats_msg = stats_msg
     
+    def start(self):
+        self.start_wall_time = time.time()
+        self.start_cpu_time = psutil.Process().cpu_times().user + psutil.Process().cpu_times().system
+        self.start_cpu_count = psutil.cpu_count()
+        
     def wall_elapsed(self):
         return time.time() - self.start_wall_time
 
