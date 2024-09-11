@@ -1,20 +1,21 @@
 Version 0.3
-Be able to see opacity
+HH: Download sequence of images via thumbnail_api
+HH: Try time-series / video.  Can we do patches for video?
+    What size patch seems good?
+        8x8x8 = 512 pixels
+RS: Be able to see opacity with single frame (numpy ndarray) or multiple frames in sequence (3d array)
   Maybe use textured background, or bright green?
   Maybe show opacity map (alpha channel) with colors and/or contours?
   Maybe also show color of smoke with alpha=1?
-What subsampling is happening?  Is it nearest neighbor (ugh) or actually low-pass filtering in some way?
-See how parallelized v2 scales to larger images
-How much CPU time is used per process?
-
+RS: How much CPU time is used per process?
 DONE Parallelize v2 patchwise
 
 BACKLOG:
-Try time-series / video.  Can we do patches for video?
-    What size patch seems good?
-        8x8x8 = 512 pixels
-Decode video into numpy array 
-How to show time-series smoke?
+What subsampling is happening?  Is it nearest neighbor (ugh) or actually low-pass filtering in some way?
+See how parallelized v2 scales to larger images
+If full least-squares minimization is too slow to search entire days at full res, consider:
+  subsample in space and/or time
+  simpler difference search as preprocessor before handing only changes to least sq
 
 
 DONE Version 0.2
