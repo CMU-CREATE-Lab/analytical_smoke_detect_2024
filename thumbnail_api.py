@@ -24,6 +24,9 @@ class Rectangle:
     def __repr__(self):
         return f"Rect(left={self.x1}, top={self.y1}, right={self.x2}, bot={self.y2})"
 
+
+# For breathecam, FPS is 12
+
 class Thumbnail:
     @staticmethod
     def from_url(url):
@@ -193,25 +196,12 @@ class Thumbnail:
         return Thumbnail.from_url(self.to_url())
     
     def get_pil_image(self):
-        # Assert scale is 1
-        assert self.scale() == (1,1)
-        tmp_thumbnail = self.copy()
-
-        # vertical margin has to be added to hold title and time.  we'll remove it later
-        # vertical_margin = 40
-        # tmp_thumbnail.v.y1 -= vertical_margin
-        # tmp_thumbnail.set_scale(1, 1)
-        # tmp_url = tmp_thumbnail.to_url()
-        # Fetch data at URL and turn into PIL image
         import requests
         from PIL import Image
         from io import BytesIO
         
         response = requests.get(self.to_url())
         if response.status_code == 200:
-            image = Image.open(BytesIO(response.content))
-            # Crop to remove the vertical margin
-            # image = image.crop((0, vertical_margin, image.width, image.height))
-            return image
+            return Image.open(BytesIO(response.content))
         else:
             raise Exception(f"Failed to fetch image. Status code: {response.status_code}")
