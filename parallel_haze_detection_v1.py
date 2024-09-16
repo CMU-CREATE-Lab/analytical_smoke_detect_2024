@@ -7,15 +7,8 @@ from contextlib import closing
 from itertools import product
 from scipy.sparse import csr_matrix
 from scipy.optimize import lsq_linear
-from common import Stopwatch, gaussian_kernel_2d, solve_haze_detection_v1
+from common import *
 
-PatchWidth = 20     #pixels
-PatchHeight = 20    #pixels
-PatchOverlapX = 10  #pixels
-PatchOverlapY = 10  #pixels
-PatchStrideX = PatchWidth - PatchOverlapX
-PatchStrideY = PatchHeight - PatchOverlapY
-PatchWeight = gaussian_kernel_2d(PatchWidth, sigma=PatchWidth / 6.0)
 Lock = None
 
 def _init(haze_img, weight_sum):
@@ -54,8 +47,8 @@ def solve_patch_haze_detection_v1(data):
     patch_haze = solve_haze_detection_v1(patch_i0, patch_i1, verbose=False)
 
     with Lock:
-        haze_img[y:y_end, x:x_end] += patch_haze * PatchWeight[:, :, np.newaxis]
-        weight_sum[y:y_end, x:x_end] += PatchWeight[:, :, np.newaxis]
+        haze_img[y:y_end, x:x_end] += patch_haze * PatchWeight2D[:, :, np.newaxis]
+        weight_sum[y:y_end, x:x_end] += PatchWeight2D[:, :, np.newaxis]
 
 
 def detect_haze_parallel_v1(i0, i1):

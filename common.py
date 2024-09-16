@@ -10,6 +10,14 @@ import time
 import psutil
 
 
+PatchWidth = 20     #pixels
+PatchHeight = 20    #pixels
+PatchOverlapX = 10  #pixels
+PatchOverlapY = 10  #pixels
+PatchStrideX = PatchWidth - PatchOverlapX
+PatchStrideY = PatchHeight - PatchOverlapY
+
+
 # Stopwatch takes a name, or a label_fn and a boolean enable.  If enable is False, the context manager does nothing.  Otherwise, it measures the time taken to execute the code block and prints the time taken.
 # label_fn is a function that takes a dataclass with fields wall_time, cpu_time, avg_cpu_used, and cpu_count, and returns a string to output
 
@@ -68,6 +76,17 @@ def solve_sparse_equations(equations, bounds=(-np.inf, np.inf), verbose=False):
 
         res = lsq_linear(A, b, bounds, verbose=(1 if verbose else 0))
         st.set_stats_msg(f'nvars={nvars}, nequations={len(equations)}')
+
+        return res.x
+
+def solve_sparse_equations_from(data, rowidx, colidx, b, bounds=(-np.inf, np.inf), verbose=False):
+    with Stopwatch("Solving sparse equations from data", print_stats=verbose) as st:
+        nvars = max(colidx) + 1
+        A = csr_matrix((data, (rowidx, colidx)), shape=(len(b), nvars))
+        b = np.array(b)
+
+        res = lsq_linear(A, b, bounds, verbose=(1 if verbose else 0))
+        st.set_stats_msg(f'nvars={nvars}, nequations={len(b)}')
 
         return res.x
 
@@ -168,12 +187,24 @@ def solve_haze_detection_v2(i0, i1):
 
         return haze_image
 
+
 def gaussian_kernel_2d(kernel_size, sigma):
     from scipy.signal.windows import gaussian
     """Returns a 2D Gaussian kernel array."""
     gkern1d = gaussian(kernel_size, std=sigma).reshape(kernel_size, 1)
     gkern2d = np.outer(gkern1d, gkern1d)
     return gkern2d
+
+PatchWeight2D = gaussian_kernel_2d(PatchWidth, sigma=PatchWidth / 6.0)
+
+def gaussian_kernel_3d(kernel_size, sigma):
+    from scipy.signal.windows import gaussian
+    """Returns a 3D Gaussian kernel array."""
+    gkern1d = gaussian(kernel_size, std=sigma).reshape(kernel_size, 1)
+
+    return np.einsum("ai,aj,ak->ijk", gkern1d, gkern1d, gkern1d)
+
+PatchWeight3D = gaussian_kernel_3d(PatchWidth, sigma=PatchWidth / 6.0)
 
 # def create_patch_weight(shape):
 #     """Create a weight matrix for a patch, with higher weights in the center."""
@@ -190,7 +221,7 @@ def gaussian_kernel_2d(kernel_size, sigma):
 #     return weight
 
 
-def read_image_from_url(url, subsample=1):
+def read_image_from_url(url, subsample=1) -> np.array:
     response = requests.get(url)
     im0 = Image.open(io.BytesIO(response.content))
     im0 = im0.resize((im0.width // subsample, im0.height // subsample))
