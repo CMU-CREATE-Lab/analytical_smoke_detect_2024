@@ -71,11 +71,11 @@ def solve_sparse_equations(equations, bounds=(-np.inf, np.inf), verbose=False):
                 data.append(coef)
             b.append(eq[-1])
         nvars = max(colidx) + 1
-        A = csr_matrix((data, (rowidx, colidx)), shape=(len(equations), nvars))
+        A = csr_matrix((data, (rowidx, colidx)), shape=(len(b), nvars))
         b = np.array(b)
 
         res = lsq_linear(A, b, bounds, verbose=(1 if verbose else 0))
-        st.set_stats_msg(f'nvars={nvars}, nequations={len(equations)}')
+        st.set_stats_msg(f'nvars={nvars}, nequations={b.shape[0]}')
 
         return res.x
 

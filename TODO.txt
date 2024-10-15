@@ -2,7 +2,11 @@ Version 0.3
 HH: Download sequence of images via thumbnail_api
 HH: Try time-series / video.  Can we do patches for video?
     What size patch seems good?
-        8x8x8 = 512 pixels
+        8x8x8 = 512 pixels  - small discrepencies
+        16x16x16
+HH: Try zoomed out video
+HH: Try images of increased size
+
 RS: Be able to see opacity with single frame (numpy ndarray) or multiple frames in sequence (3d array)
   Maybe use textured background, or bright green?
   Maybe show opacity map (alpha channel) with colors and/or contours?

@@ -60,12 +60,19 @@ class Thumbnail:
                 "startDwell": float,
                 "endDwell": float,
                 "t": float,
-                "v": Rectangle.from_pts
             }
             for key, type_ in root_non_string_params.items():
                 if key in root_params:
                     root_params[key] = type_(root_params[key])
             
+            if 'v' in root_params:
+                coords = root_params['v'].split(',')
+
+                if len(coords) > 4:
+                    root_params['v'] = Rectangle.from_pts(root_params['v'])
+                else:
+                    root_params['v'] = tuple(map(float, coords[:-1]))
+
             # Update the 'root' value in main_params with the parsed URL without query string
             main_params['root'] = urllib.parse.urlunparse(parsed_root._replace(query=''))
         else:
@@ -145,8 +152,14 @@ class Thumbnail:
 
     def to_url(self):
         # Construct the root URL parameters
+        if isinstance(self.v, Rectangle):
+            v = self.v.to_pts()
+        else:
+            pts = map(lambda n: int(n) if n.is_integer() else n, self.v)
+            v = f"{','.join(map(str, pts))},pts"
+
         root_params = {
-            'v': self.v.to_pts(),
+            'v': v,
             't': self.t,
             'ps': self.ps,
             'bt': self.bt,
@@ -160,7 +173,7 @@ class Thumbnail:
 
         # Encode the root URL
         root_url = self.root + '#' + Thumbnail.encode_query_params(root_params, safe='%,')
-        print("root_url:", root_url)
+        #print("root_url:", root_url)
         # URLencode the root URL
         #root_url = urllib.parse.quote(root_url, safe='')
     

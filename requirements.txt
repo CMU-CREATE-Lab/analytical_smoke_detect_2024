@@ -4,6 +4,7 @@ requests
 pandas
 geopandas
 matplotlib
+plotly
 folium
 mapclassify
 scipy
