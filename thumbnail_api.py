@@ -7,6 +7,27 @@ class Rectangle:
         self.x2 = x2
         self.y2 = y2
 
+    def intersection(self, other) -> 'Rectangle':
+        x1 = max(self.x1, other.x1)
+        y1 = max(self.y1, other.y1)
+        x2 = min(self.x2, other.x2)
+        y2 = min(self.y2, other.y2)
+        if x1 < x2 and y1 < y2:
+            return Rectangle(x1, y1, x2, y2)
+        else:
+            return None
+        
+    def translate(self, dx, dy) -> 'Rectangle':
+        return Rectangle(self.x1 + dx, self.y1 + dy, self.x2 + dx, self.y2 + dy)
+    
+    @property
+    def width(self):
+        return self.x2 - self.x1
+    
+    @property
+    def height(self):
+        return self.y2 - self.y1
+    
     @staticmethod
     def from_pts(pts: str):
         # Example: "4654,2127,4915,2322,pts"

@@ -8,3 +8,5 @@ plotly
 folium
 mapclassify
 scipy
+pytest
+opencv-python

@@ -2,3 +2,7 @@ venv
 .junkyard
 venv
 __pycache__
+frame0_differences.jpg
+subsample1_downscaled_frame0.jpg
+subsample2_frame0.jpg
+ffmpeg
