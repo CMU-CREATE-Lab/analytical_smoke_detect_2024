@@ -1,3 +1,5 @@
+# coded in part with https://claude.ai/chat/2fba7438-0e73-41d5-bd98-313e5d0a57cc
+
 import subprocess
 import numpy as np
 import json
