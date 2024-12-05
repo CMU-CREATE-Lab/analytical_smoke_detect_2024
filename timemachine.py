@@ -1,10 +1,28 @@
 # coded in part with https://claude.ai/chat/2fba7438-0e73-41d5-bd98-313e5d0a57cc
 
+import datetime
 import requests
 from thumbnail_api import Rectangle
 import math
 import numpy as np
 from video_decoder import decode_video_frames
+
+
+CAMERAS = {
+    "Clairton Coke Works": "clairton4", 
+    "Shell Plastics West": "vanport3", 
+    "Edgar Thomson South": "westmifflin2",
+    "Metalico": "accan2", 
+    "Revolution ETC/Harmon Creek Gas Processing Plants": "cryocam",
+    "Riverside Concrete": "cementcam", 
+    "Shell Plastics East": "center1", 
+    "Irvin": "irvin1", 
+    "North Shore": "heinz", 
+    "Mon. Valley": "walnuttowers1", 
+    "Downtown": "trimont1", 
+    "Oakland": "oakland"
+}
+
 
 class TimeMachine:
     def __init__(self, root_url: str):
@@ -21,6 +39,66 @@ class TimeMachine:
         print(f"Fetching {self.r_url}")
         self.r = requests.get(self.r_url).json()
         print(f'TimeMachine has {self.r["nlevels"]} levels and {len(self.capture_times())} frames')
+
+    @staticmethod
+    def download(
+        location: str, 
+        date: datetime.date,
+        time: datetime.time,
+        frames: int, 
+        rect: Rectangle, 
+        subsample: int) np.ndarray:
+        """
+        Downloads a video for the given camera location, date and time.
+
+        Parameters:
+        ---
+        * location - Location of the camera, refer to `CAMERAS` for valid locations.
+        * date - The day of the video
+        * time - The time to start the capture
+        * frames - The number of frames to capture
+        * rect - The view to capture
+        * subsample - The subsample of the produced video
+
+        Returns:
+        ---
+        If frames is 1, a numpy array of dimensions width*height*4. If frames
+        is greater than 1, a numpy array of dimensions frames*width*height*4.
+        """
+
+        if date is None:
+            raise Exception("Date not set.")
+
+        if time is None:
+            raise Exception("Time not set.")
+
+        date_str = date.strftime("%Y-%m-%d")
+        time_str = get_time(time)
+        start_time = f"{date_str} {time_str.strftime('%H:%M:%S')}"
+        url = f"{BASE_URL}/{CAMERAS[location]}/{date_str}.timemachine"
+
+        cam = BreatheCam(url)
+
+        start_frame = cam.frame_from_date(start_time)
+        
+        if start_frame < 0:
+            raise Exception("First frame invalid.")
+            return None
+        
+        remaining_frames = len(cam.capture_times()) - start_frame
+
+        if remaining_frames < frames:
+            frames = remaining_frames
+
+        video = cam.download_video(start_frame, frames, view, subsample)
+
+        opacity = np.full((video.shape[0], video.shape[1], video.shape[2], 1), 255, dtype=video.dtype)
+        video = np.concatenate((video, opacity), axis=3) / 255.0
+
+        if frames == 1:
+            return video[0]
+        else:
+            return video
 
     def download_video(self, start_frame_no: int, nframes: int, rect: Rectangle, subsample:int=1):
         """
