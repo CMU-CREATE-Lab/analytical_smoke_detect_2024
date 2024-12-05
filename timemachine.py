@@ -151,4 +151,4 @@ class TimeMachine:
         print(f"Tile width: {self.tile_width()}")
         print(f"Tile height: {self.tile_height()}")
         print(f"r: {self.r}")
-        print(f"tm: {self.tm}")
+        print(f"tm: {self.tm}")   

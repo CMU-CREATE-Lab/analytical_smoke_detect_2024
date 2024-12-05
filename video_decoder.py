@@ -95,10 +95,10 @@ def decode_video_frames(video_url, start_frame=None, n_frames=None, start_time=N
         raise ValueError("Either frame numbers or timestamps must be provided")
     
     # Build ffmpeg command
-    cmd = ['ffmpeg', '-i', video_url]
+    cmd = ['ffmpeg', '-ss', str(start_time)]
     
     # Add time selection
-    cmd.extend(['-ss', str(start_time), '-t', str(duration)])
+    cmd.extend(['-i', video_url, '-t', str(duration)])
     
     # Add output format settings
     cmd.extend([
