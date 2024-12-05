@@ -13,8 +13,8 @@ CAMERAS = {
     "Shell Plastics West": "vanport3", 
     "Edgar Thomson South": "westmifflin2",
     "Metalico": "accan2", 
-    "Revolution ETC/Harmon Creek Gas Processing Plants": "cryocam",
-    "Riverside Concrete": "cementcam", 
+    "Revolution ETC/Harmon Creek Gas Processing Plants": "cryotm",
+    "Riverside Concrete": "cementtm", 
     "Shell Plastics East": "center1", 
     "Irvin": "irvin1", 
     "North Shore": "heinz", 
@@ -49,11 +49,11 @@ class TimeMachine:
         rect: Rectangle, 
         subsample: int) np.ndarray:
         """
-        Downloads a video for the given camera location, date and time.
+        Downloads a video for the given tmera location, date and time.
 
         Parameters:
         ---
-        * location - Location of the camera, refer to `CAMERAS` for valid locations.
+        * location - Location of the tmera, refer to `CAMERAS` for valid locations.
         * date - The day of the video
         * time - The time to start the capture
         * frames - The number of frames to capture
@@ -77,20 +77,20 @@ class TimeMachine:
         start_time = f"{date_str} {time_str.strftime('%H:%M:%S')}"
         url = f"{BASE_URL}/{CAMERAS[location]}/{date_str}.timemachine"
 
-        cam = BreatheCam(url)
+        tm = TimeMachine(url)
 
-        start_frame = cam.frame_from_date(start_time)
+        start_frame = tm.frame_from_date(start_time)
         
         if start_frame < 0:
             raise Exception("First frame invalid.")
             return None
         
-        remaining_frames = len(cam.capture_times()) - start_frame
+        remaining_frames = len(tm.capture_times()) - start_frame
 
         if remaining_frames < frames:
             frames = remaining_frames
 
-        video = cam.download_video(start_frame, frames, view, subsample)
+        video = tm.download_video(start_frame, frames, view, subsample)
 
         opacity = np.full((video.shape[0], video.shape[1], video.shape[2], 1), 255, dtype=video.dtype)
         video = np.concatenate((video, opacity), axis=3) / 255.0
