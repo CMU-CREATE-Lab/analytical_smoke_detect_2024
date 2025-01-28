@@ -1,3 +1,5 @@
+(Also see TODO_VIDEO_EXPORT.txt)
+
 Version 0.3
 HH: Download sequence of images via thumbnail_api
 HH: Try time-series / video.  Can we do patches for video?

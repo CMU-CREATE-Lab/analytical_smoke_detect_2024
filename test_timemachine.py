@@ -3,6 +3,8 @@ from numpy.testing import assert_array_equal, assert_array_almost_equal
 from timemachine import TimeMachine
 from thumbnail_api import Rectangle
 from video_decoder import decode_video_frames
+import dateutil.parser
+import pytz
 import cv2  # for saving images
 
 def save_frame_as_jpg(frame, filename):
@@ -24,7 +26,7 @@ def test_timemachine_download():
     
     # Download via TimeMachine
     print("\nDownloading via TimeMachine.download_video...")
-    tm_frames = timemachine.download_video(
+    tm_frames = timemachine.download_video_frame_range(
         start_frame_no=0,
         nframes=15,
         rect=rect,
@@ -95,7 +97,7 @@ def test_timemachine_scale():
     
     # Download at subsample=2
     print("\nDownloading at subsample=2...")
-    frames_subsampled = timemachine.download_video(
+    frames_subsampled = timemachine.download_video_frame_range(
         start_frame_no=0,
         nframes=15,
         rect=rect_subsampled,
@@ -111,7 +113,7 @@ def test_timemachine_scale():
     )
     
     print("\nDownloading at full resolution (subsample=1)...")
-    frames_full = timemachine.download_video(
+    frames_full = timemachine.download_video_frame_range(
         start_frame_no=0,
         nframes=15,
         rect=rect_full,
@@ -180,3 +182,55 @@ if __name__ == '__main__':
     
     print("\n=== Running scale comparison test ===")
     test_timemachine_scale()
+
+def parse_et(date_str):
+    """Parse a date string in Eastern Time."""
+    eastern_tz = pytz.timezone("America/New_York")
+    return eastern_tz.localize(dateutil.parser.parse(date_str))
+
+def check_frameno_from_date(tm, dt):
+    be = tm.frameno_from_date_before_or_equal(dt)
+    assert tm.capture_datetimes()[be] <= dt
+    if be < len(tm.capture_datetimes())-1:
+        assert tm.capture_datetimes()[be+1] > dt
+    af = tm.frameno_from_date_after_or_equal(dt)
+    assert tm.capture_datetimes()[af] >= dt
+    if af > 0:
+        assert tm.capture_datetimes()[af-1] < dt
+
+def test_timemachine_capture_datetimes():
+    """Test TimeMachine capture times."""
+    
+    # Initialize TimeMachine
+    print("Initializing TimeMachine...")
+    timemachine = TimeMachine("https://tiles.cmucreatelab.org/ecam/timemachines/clairton4/2024-10-23.timemachine")
+    
+    # Get capture times
+    capture_times = timemachine.capture_datetimes()
+
+    # Verify the number of capture times
+    assert len(capture_times) == 28775
+
+    first_datetime = capture_times[0]
+
+    expected_first_datetime = parse_et("2024-10-23 00:00:00")
+    # Get the last entry of a the Pandas series
+    last_datetime = capture_times[-1]
+    expected_last_datetime = parse_et("2024-10-23 23:59:57")
+    assert first_datetime == expected_first_datetime
+    assert last_datetime == expected_last_datetime
+
+    assert timemachine.frameno_from_date_before_or_equal(expected_first_datetime) == 0
+    assert timemachine.frameno_from_date_before_or_equal(expected_last_datetime) == len(capture_times)-1
+
+    check_frameno_from_date(timemachine, parse_et("2024-10-23 03:00:00"))
+    check_frameno_from_date(timemachine, parse_et("2024-10-23 03:00:01"))
+    check_frameno_from_date(timemachine, parse_et("2024-10-23 03:00:02"))
+    check_frameno_from_date(timemachine, parse_et("2024-10-23 03:00:03"))
+    check_frameno_from_date(timemachine, parse_et("2024-10-23 12:00:00"))
+    check_frameno_from_date(timemachine, parse_et("2024-10-23 12:00:01"))
+    check_frameno_from_date(timemachine, parse_et("2024-10-23 12:00:02"))
+    check_frameno_from_date(timemachine, parse_et("2024-10-23 12:00:03"))
+
+    
+

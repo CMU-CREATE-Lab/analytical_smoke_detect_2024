@@ -1,56 +1,27 @@
+import copy
 import urllib.parse
-
-class Rectangle:
-    def __init__(self, x1, y1, x2, y2):
-        self.x1 = x1
-        self.y1 = y1
-        self.x2 = x2
-        self.y2 = y2
-
-    def intersection(self, other) -> 'Rectangle':
-        x1 = max(self.x1, other.x1)
-        y1 = max(self.y1, other.y1)
-        x2 = min(self.x2, other.x2)
-        y2 = min(self.y2, other.y2)
-        if x1 < x2 and y1 < y2:
-            return Rectangle(x1, y1, x2, y2)
-        else:
-            return None
-        
-    def translate(self, dx, dy) -> 'Rectangle':
-        return Rectangle(self.x1 + dx, self.y1 + dy, self.x2 + dx, self.y2 + dy)
-    
-    @property
-    def width(self):
-        return self.x2 - self.x1
-    
-    @property
-    def height(self):
-        return self.y2 - self.y1
-    
-    @staticmethod
-    def from_pts(pts: str):
-        # Example: "4654,2127,4915,2322,pts"
-        tokens = pts.split(",")
-        assert len(tokens) == 5, "Invalid number of tokens"
-        assert tokens[-1] == "pts", "Invalid token"
-        x1, y1, x2, y2 = map(float, tokens[:4])
-        return Rectangle(x1, y1, x2, y2)
-
-    def to_pts(self):
-        nums = [self.x1, self.y1, self.x2, self.y2]
-        nums = [int(num) if num.is_integer() else num for num in nums]
-        return f"{','.join(map(str, nums))},pts"
-
-    def __repr__(self):
-        return f"Rect(left={self.x1}, top={self.y1}, right={self.x2}, bot={self.y2})"
-
+import requests
+import datetime
+import pytz
+from rectangle import Rectangle
 
 # For breathecam, FPS is 12
 
+def find_target_if_redirect(url):
+    try:
+        response = requests.head(url, allow_redirects=False)
+        if response.status_code in (301, 302, 303, 307, 308):
+            return response.headers['Location']
+        return url  # No redirect
+    except requests.RequestException as e:
+        print(f"Error: {e}")
+        return None
+    
 class Thumbnail:
-    @staticmethod
-    def from_url(url):
+    def __init__(self, url: str):
+        # follow redirect if we're using an url shortener
+        url = find_target_if_redirect(url)
+
         # Parse the URL and extract query parameters
         parsed_url = urllib.parse.urlparse(url)
         main_params = Thumbnail.parse_query_params(parsed_url)
@@ -112,29 +83,31 @@ class Thumbnail:
         # Assuming all URLs have precisely these parameters, let's put them into instance variables
         # For duplicate keys, assert that the values are the same
 
-        thumbnail = Thumbnail()
-        thumbnail.root = main_params['root']
-        thumbnail.width = main_params['width']
-        thumbnail.height = main_params['height']
-        thumbnail.format = main_params['format']
-        thumbnail.fps = main_params['fps']
+        self.root = main_params['root']
+        self.width = main_params['width']
+        self.height = main_params['height']
+        self.format = main_params['format']
+        self.fps = main_params['fps']
         assert main_params['fps'] == root_params['fps'], "FPS values do not match"
-        thumbnail.tile_format = main_params['tileFormat']
-        thumbnail.start_dwell = main_params['startDwell']
-        thumbnail.end_dwell = main_params['endDwell']
-        thumbnail.from_screenshot = 'fromScreenshot' in main_params
-        thumbnail.minimal_ui = 'minimalUI' in main_params
-        thumbnail.disable_ui = 'disableUI' in main_params
+        self.tile_format = main_params['tileFormat']
+        self.start_dwell = main_params['startDwell']
+        self.end_dwell = main_params['endDwell']
+        self.from_screenshot = 'fromScreenshot' in main_params
+        self.minimal_ui = 'minimalUI' in main_params
+        self.disable_ui = 'disableUI' in main_params
         assert main_params['startDwell'] == root_params['startDwell'], "Start dwell values do not match"
         assert main_params['endDwell'] == root_params['endDwell'], "End dwell values do not match"
-        thumbnail.v = root_params['v']
-        thumbnail.t = root_params['t']
-        thumbnail.ps = root_params['ps']
-        thumbnail.bt = root_params['bt']
-        thumbnail.et = root_params['et']
-        thumbnail.d = root_params['d']
-        thumbnail.s = root_params['s']
-        return thumbnail
+        self.v = root_params['v']
+        self.t = root_params['t']
+        self.ps = root_params['ps']
+        self.bt = root_params['bt']
+        self.et = root_params['et']
+        self.d = root_params['d']
+        self.s = root_params['s']
+    
+    def __repr__(self):
+        # Output a string with all the parameters that were parsed in from_url
+        return f"Thumbnail(root={self.root}, width={self.width}, height={self.height}, format={self.format}, fps={self.fps}, tile_format={self.tile_format}, start_dwell={self.start_dwell}, end_dwell={self.end_dwell}, from_screenshot={self.from_screenshot}, minimal_ui={self.minimal_ui}, disable_ui={self.disable_ui}, v={self.v}, t={self.t}, ps={self.ps}, bt={self.bt}, et={self.et}, d={self.d}, s={self.s})"
 
     @staticmethod
     def parse_query_params(parsed_url):
@@ -220,11 +193,39 @@ class Thumbnail:
         return final_url
     
     def scale(self):
-        return (self.width / (self.v.x2 - self.v.x1), self.height / (self.v.y2 - self.v.y1))
+        return (self.width / self.view_rect().width, self.height / self.view_rect().height)
     
     def set_scale(self, x_scale, y_scale):
         self.width = int((self.v.x2 - self.v.x1) * x_scale)
         self.height = int((self.v.y2 - self.v.y1) * y_scale)
+
+    def view_rect(self) -> Rectangle:
+        assert isinstance(self.v, Rectangle), "v is not a Rectangle"
+        return self.v
+
+    # Resize thumbnail width and height, preserving scale.
+    # This can shrink or expand the visible area as expressed by the rectangle.
+    # It will preserve the center of the rectangle, to the nearest pixel
+
+    def resize_rect_preserving_scale(self, desired_width, desired_height):
+        assert self.scale() == (1, 1), "For now, only works for scale 1"
+        rect = self.view_rect()
+    
+        delta_width = desired_width - rect.width
+        delta_left = -(delta_width // 2)
+        delta_right = delta_width + delta_left
+        
+        delta_height = desired_height - rect.height
+        delta_top = -(delta_height // 2)
+        delta_bottom = delta_height + delta_top
+        
+        rect.x1 += delta_left
+        rect.x2 += delta_right
+        rect.y1 += delta_top
+        rect.y2 += delta_bottom
+        
+        self.width = rect.width
+        self.height = rect.height
     
     def copy(self):
         return Thumbnail.from_url(self.to_url())
@@ -239,3 +240,47 @@ class Thumbnail:
             return Image.open(BytesIO(response.content))
         else:
             raise Exception(f"Failed to fetch image. Status code: {response.status_code}")
+
+class BreathecamThumbnail(Thumbnail):
+    def __init__(self, url: str):
+        super().__init__(url)
+        assert self.root == "https://breathecam.org/"
+
+    def copy(self) -> 'BreathecamThumbnail':
+        return copy.deepcopy(self)
+
+    def camera_id(self) -> str:
+        return self.s
+    
+    def camera_timezone(self):
+        # TODO: We need to unhardcode this when we have breathecams in other timezones
+        return pytz.timezone('America/New_York')
+    
+    def begin_time_in_camera_timezone(self) -> datetime.datetime:
+        return self._parse_bt_et(self.bt)
+
+    def end_time_in_camera_timezone(self) -> datetime.datetime:
+        return self._parse_bt_et(self.et)
+    
+    def set_begin_end_times(self, begin: datetime.datetime, end: datetime.datetime):
+        begin_date = begin.astimezone(self.camera_timezone()).date()
+        end_date = end.astimezone(self.camera_timezone()).date()
+        assert begin_date == end_date, "Begin and end times must be on the same date"
+        self.bt = self._unparse_bt_et(begin)
+        self.et = self._unparse_bt_et(end)
+    
+    def timemachine_root_url(self) -> str:
+        url_date = self.begin_time_in_camera_timezone().strftime('%Y-%m-%d')
+        return f"https://tiles.cmucreatelab.org/ecam/timemachines/{self.camera_id()}/{url_date}.timemachine"
+
+    # bt and et are in UTC, but Breathecam uses times in the camera's timezone
+    def _parse_bt_et(self, yyyymmddhhss: str) -> datetime.datetime:
+        datetime_utc = pytz.utc.localize(datetime.datetime.strptime(yyyymmddhhss, "%Y%m%d%H%M%S"))
+        datetime_local = datetime_utc.astimezone(self.camera_timezone())
+        return datetime_local
+    
+    def _unparse_bt_et(self, datetime_local: datetime.datetime) -> str:
+        datetime_utc = datetime_local.astimezone(pytz.utc)
+        return datetime_utc.strftime("%Y%m%d%H%M%S")
+
+

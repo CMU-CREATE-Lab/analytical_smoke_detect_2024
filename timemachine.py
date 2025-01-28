@@ -2,10 +2,14 @@
 
 import datetime
 import requests
-from thumbnail_api import Rectangle
+from thumbnail_api import Rectangle, BreathecamThumbnail
 import math
 import numpy as np
+import pandas as pd
 from video_decoder import decode_video_frames
+import pytz
+import dateutil.parser
+from functools import cache
 
 
 CAMERAS = {
@@ -23,9 +27,8 @@ CAMERAS = {
     "Oakland": "oakland"
 }
 
-
 class TimeMachine:
-    def __init__(self, root_url: str):
+    def __init__(self, root_url: str, timezone=pytz.timezone("America/New_York")):
         self.root_url = root_url
         self.tm_url = f"{root_url}/tm.json"
         print(f"Fetching {self.tm_url}")
@@ -39,6 +42,29 @@ class TimeMachine:
         print(f"Fetching {self.r_url}")
         self.r = requests.get(self.r_url).json()
         print(f'TimeMachine has {self.r["nlevels"]} levels and {len(self.capture_times())} frames')
+        self.timezone = timezone
+
+    @cache
+    def capture_datetimes(self):
+        return [self.timezone.localize(dateutil.parser.parse(t)) for t in self.capture_times()]
+    
+    @cache
+    def frameno_from_date_before_or_equal(self, dt: datetime.datetime):
+        for i, t in enumerate(self.capture_datetimes()):
+            if t > dt:
+                return max(0, i - 1)
+        return len(self.capture_datetimes()) - 1
+    
+    @cache
+    def frameno_from_date_after_or_equal(self, dt: datetime.datetime):
+        for i, t in enumerate(self.capture_datetimes()):
+            if t >= dt:
+                return i
+        return len(self.capture_datetimes()) - 1
+    
+    @classmethod
+    def from_breathecam_thumbnail(cls, thumbnail: BreathecamThumbnail):
+        return cls(thumbnail.timemachine_root_url())
 
     @staticmethod
     def download(
@@ -47,7 +73,7 @@ class TimeMachine:
         time: datetime.time,
         frames: int, 
         rect: Rectangle, 
-        subsample: int) np.ndarray:
+        subsample: int) -> np.ndarray:
         """
         Downloads a video for the given tmera location, date and time.
 
@@ -100,7 +126,7 @@ class TimeMachine:
         else:
             return video
 
-    def download_video(self, start_frame_no: int, nframes: int, rect: Rectangle, subsample:int=1):
+    def download_video_frame_range(self, start_frame_no: int, nframes: int, rect: Rectangle, subsample:int=1):
         """
         Download and assemble video tiles into a single numpy array.
         
@@ -113,6 +139,7 @@ class TimeMachine:
         Returns:
             numpy.ndarray: Array of shape (nframes, height, width, 3) containing the video data
         """
+        rect = rect.ensure_integer()
         level = self.level_from_subsample(subsample)
         level_width = self.width(subsample)
         level_height = self.height(subsample)
@@ -126,6 +153,9 @@ class TimeMachine:
         min_tile_x = rect.x1 // self.tile_width()
         max_tile_x = 1 + (rect.x2 - 1) // self.tile_width()
         
+        n_tiles = (max_tile_y - min_tile_y) * (max_tile_x - min_tile_x)
+        print(f"Fetching {n_tiles} tiles")
+        count = 0
         for tile_y in range(min_tile_y, max_tile_y):
             for tile_x in range(min_tile_x, max_tile_x):
                 tile_url = self.tile_url(level, tile_x, tile_y)
@@ -151,8 +181,9 @@ class TimeMachine:
                 src_rect = intersection.translate(-tile_rectangle.x1, -tile_rectangle.y1)
                 dest_rect = intersection.translate(-rect.x1, -rect.y1)
                 
-                print(f"Fetching {tile_url}")
-                print(f"From tile {tile_url}, copying {src_rect} to destination {dest_rect}")
+                count += 1
+                print(f"{count} of {n_tiles}: Fetching {tile_url}")
+                print(f"      from tile {tile_url}, copying {src_rect} to destination {dest_rect}")
                 
                 try:
                     # Download the tile video
@@ -176,6 +207,12 @@ class TimeMachine:
                     continue
         
         return result
+
+    def download_video_time_range(self, start_time: datetime.datetime, end_time: datetime.datetime, rect: Rectangle, subsample:int=1):   
+        start_frame = self.frameno_from_date_after_or_equal(start_time)
+        end_frame = self.frameno_from_date_before_or_equal(end_time)
+        nframes = end_frame - start_frame + 1
+        return self.download_video_frame_range(start_frame, nframes, rect, subsample)
 
     # tile_x and tile_y are in tile coordinates / 4
     def tile_url(self, level:int, tile_x:int, tile_y:int):

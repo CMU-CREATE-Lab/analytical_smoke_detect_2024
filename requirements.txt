@@ -10,3 +10,6 @@ mapclassify
 scipy
 pytest
 opencv-python
+pytz
+gspread
+oauth2client

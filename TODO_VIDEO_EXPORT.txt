@@ -1,0 +1,21 @@
+Version 0.1:
+    DONE Modify thumbnail_api to use constructor instead of from_url, and do inheritance right in constructor
+    DONE Figure out correct bounds and subsample from thumbnail dimensions
+    DONE Create tz-aware frame datetimes from text date times
+    DONE Map datetime to frameno
+    DONE Read spreadsheet
+    DONE Create BatchExporter class
+    DONE Create test_batch_exporter
+    DONE Get 4K Clairton view into BatchExporter
+    DONE For Natisha view, mutate bt, et after parsing thumbnail, and before generating timemachine
+    DONE Use spreadsheet to set bt, et
+    DONE Try download pixels from Natisha's first video ("short")
+    DONE Try encode pixels from Natisha's first video (in BatchExporter)
+    DONE Try second video ("medium") and benchmark
+    DONE Commit
+
+Version 0.2:
+    Try shards for second video and benchmark
+    Batch Exporter requests multiple timemachine video downloads, in parallel, received as numpy assert_array_almost_equal
+    Batch Exporter encodes using ffmpeg as binary shards arrive
+    
