@@ -16,3 +16,4 @@ oauth2client
 pytest-profiling
 yappi
 google-api-python-client
+ffmpeg-python

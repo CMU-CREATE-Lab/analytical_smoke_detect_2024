@@ -6,8 +6,8 @@ from collections import defaultdict, namedtuple
 from itertools import product
 from typing import Literal, Union
 
-from cmn import DisjointSet, video_to_html, videos_to_html, videos_to_html_stack
-from view import View
+from .cmn import DisjointSet, video_to_html, videos_to_html, videos_to_html_stack
+from .view import View
 
 Color = namedtuple('Color', ["red", "green", "blue"])
 Point = namedtuple("Point", ["frame", "row", "column"])

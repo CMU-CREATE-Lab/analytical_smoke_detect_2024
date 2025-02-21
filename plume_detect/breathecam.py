@@ -9,9 +9,9 @@ import requests
 from dataclasses import dataclass
 from typing import Callable, Literal, Union
 
-from cmn import TIME_MACHINES, CAMERAS, decode_video_frames, get_camera_id, get_time
-from motion import Motion
-from view import View
+from .cmn import TIME_MACHINES, CAMERAS, decode_video_frames, get_camera_id, get_time
+from .motion import Motion
+from .view import View
 
 DateFormatter = Callable[[str], datetime.date]
 
