@@ -8,3 +8,5 @@ subsample2_frame0.jpg
 ffmpeg
 secrets
 exports
+*.prof
+prof

@@ -13,3 +13,6 @@ opencv-python
 pytz
 gspread
 oauth2client
+pytest-profiling
+yappi
+google-api-python-client

@@ -1,6 +1,7 @@
 # coded in part with https://claude.ai/chat/2fba7438-0e73-41d5-bd98-313e5d0a57cc
 
 import datetime
+import concurrent
 import requests
 from thumbnail_api import Rectangle, BreathecamThumbnail
 import math
@@ -10,6 +11,9 @@ from video_decoder import decode_video_frames
 import pytz
 import dateutil.parser
 from functools import cache
+import threading
+from queue import Queue
+from concurrent.futures import ThreadPoolExecutor
 
 
 CAMERAS = {
@@ -46,7 +50,9 @@ class TimeMachine:
 
     @cache
     def capture_datetimes(self):
-        return [self.timezone.localize(dateutil.parser.parse(t)) for t in self.capture_times()]
+        # Use strptime to parse the capture times since it's faster.  Format is 2024-09-09 00:00:00
+        return [self.timezone.localize(datetime.datetime.strptime(t, "%Y-%m-%d %H:%M:%S")) for t in self.capture_times()]
+        #return [self.timezone.localize(dateutil.parser.parse(t)) for t in self.capture_times()]
     
     @cache
     def frameno_from_date_before_or_equal(self, dt: datetime.datetime):
@@ -126,74 +132,91 @@ class TimeMachine:
         else:
             return video
 
-    def download_video_frame_range(self, start_frame_no: int, nframes: int, rect: Rectangle, subsample:int=1):
+    def download_video_frame_range(self, start_frame_no: int, nframes: int, rect: Rectangle, subsample:int=1, max_threads:int=8):
         """
-        Download and assemble video tiles into a single numpy array.
+        Download and assemble video tiles into a single numpy array using parallel threads.
         
         Args:
             start_frame_no: Starting frame number
             nframes: Number of frames to download
             rect: Rectangle coordinates after subsampling
             subsample: Subsample factor
+            max_threads: Maximum number of concurrent download threads
         
         Returns:
             numpy.ndarray: Array of shape (nframes, height, width, 3) containing the video data
         """
+        
         rect = rect.ensure_integer()
         level = self.level_from_subsample(subsample)
         level_width = self.width(subsample)
         level_height = self.height(subsample)
         
-        # Create output array to hold the final video
+        # Create output array
         result = np.zeros((nframes, rect.height, rect.width, 3), dtype=np.uint8)
         
-        # Compute the tiles that intersect the rectangle
+        # Compute tile range
         min_tile_y = rect.y1 // self.tile_height()
         max_tile_y = 1 + (rect.y2 - 1) // self.tile_height()
         min_tile_x = rect.x1 // self.tile_width()
         max_tile_x = 1 + (rect.x2 - 1) // self.tile_width()
         
-        n_tiles = (max_tile_y - min_tile_y) * (max_tile_x - min_tile_x)
-        print(f"Fetching {n_tiles} tiles")
-        count = 0
-        for tile_y in range(min_tile_y, max_tile_y):
-            for tile_x in range(min_tile_x, max_tile_x):
-                tile_url = self.tile_url(level, tile_x, tile_y)
+        # Function to download and process a single tile
+        def process_tile(tile_x, tile_y):
+            tile_url = self.tile_url(level, tile_x, tile_y)
+            
+            # # Check if tile exists
+            # response = requests.head(tile_url)
+            # if response.status_code == 404:
+            #     return None
                 
-                # Check if tile exists
-                response = requests.head(tile_url)
-                if response.status_code == 404:
-                    print(f"Warning: tile {tile_x},{tile_y} does not exist, skipping")
-                    continue
-                    
-                # Calculate tile and intersection rectangles
-                tile_rectangle = Rectangle(
-                    tile_x * self.tile_width(),
-                    tile_y * self.tile_height(),
-                    (tile_x + 1) * self.tile_width(),
-                    (tile_y + 1) * self.tile_height()
+            tile_rectangle = Rectangle(
+                tile_x * self.tile_width(),
+                tile_y * self.tile_height(),
+                (tile_x + 1) * self.tile_width(),
+                (tile_y + 1) * self.tile_height()
+            )
+            
+            intersection = rect.intersection(tile_rectangle)
+            if intersection is None:
+                return None
+                
+            src_rect = intersection.translate(-tile_rectangle.x1, -tile_rectangle.y1)
+            dest_rect = intersection.translate(-rect.x1, -rect.y1)
+            
+            try:
+                frames = decode_video_frames(
+                    video_url=tile_url,
+                    start_frame=start_frame_no,
+                    n_frames=nframes,
+                    width = self.tile_width(),
+                    height = self.tile_height(),
+                    fps = self.fps()
                 )
+                return (frames, src_rect, dest_rect)
+            except Exception as e:
+                print(f"Error processing tile {tile_url}: {str(e)}")
+                return None
+
+        # Create list of all tile coordinates
+        tiles = [(x, y) for y in range(min_tile_y, max_tile_y) 
+                       for x in range(min_tile_x, max_tile_x)]
+        n_tiles = len(tiles)
+        print(f"Processing {n_tiles} tiles with {max_threads} threads")
+
+        # Process tiles in parallel
+        with ThreadPoolExecutor(max_workers=max_threads) as executor:
+            # Submit all tasks
+            future_to_tile = {executor.submit(process_tile, x, y): (x, y) 
+                            for x, y in tiles}
+            
+            # Process results as they complete
+            for i, future in enumerate(concurrent.futures.as_completed(future_to_tile), 1):
+                tile_x, tile_y = future_to_tile[future]
+                result_data = future.result()
                 
-                intersection = rect.intersection(tile_rectangle)
-                assert intersection is not None, f"Tile {tile_x},{tile_y} does not intersect rectangle {rect}"
-                
-                # Calculate source and destination rectangles
-                src_rect = intersection.translate(-tile_rectangle.x1, -tile_rectangle.y1)
-                dest_rect = intersection.translate(-rect.x1, -rect.y1)
-                
-                count += 1
-                print(f"{count} of {n_tiles}: Fetching {tile_url}")
-                print(f"      from tile {tile_url}, copying {src_rect} to destination {dest_rect}")
-                
-                try:
-                    # Download the tile video
-                    frames, metadata = decode_video_frames(
-                        video_url=tile_url,
-                        start_frame=start_frame_no,
-                        n_frames=nframes
-                    )
-                    
-                    # Copy the intersection region to the result array
+                if result_data is not None:
+                    frames, src_rect, dest_rect = result_data
                     result[:, 
                            dest_rect.y1:dest_rect.y2,
                            dest_rect.x1:dest_rect.x2,
@@ -201,11 +224,8 @@ class TimeMachine:
                                      src_rect.y1:src_rect.y2,
                                      src_rect.x1:src_rect.x2,
                                      :]
-                    
-                except Exception as e:
-                    print(f"Error processing tile {tile_url}: {str(e)}")
-                    continue
-        
+                print(f"Completed {i} of {n_tiles} tiles")
+
         return result
 
     def download_video_time_range(self, start_time: datetime.datetime, end_time: datetime.datetime, rect: Rectangle, subsample:int=1):   

@@ -6,7 +6,8 @@ import json
 import requests
 from thumbnail_api import Rectangle
 
-def decode_video_frames(video_url, start_frame=None, n_frames=None, start_time=None, end_time=None):
+def decode_video_frames(video_url, start_frame=None, n_frames=None, start_time=None, end_time=None,
+                        width=None, height=None, fps=None):
     """
     Decode a range of frames from an MP4 video file accessed via HTTPS.
     
@@ -35,53 +36,54 @@ def decode_video_frames(video_url, start_frame=None, n_frames=None, start_time=N
     if start_frame is not None and start_time is not None:
         raise ValueError("Cannot specify both frame numbers and timestamps")
     
-    # Get video information using ffprobe
-    probe_cmd = [
-        'ffprobe',
-        '-v', 'quiet',
-        '-print_format', 'json',
-        '-show_streams',
-        '-show_format',
-        '-select_streams', 'v:0',
-        video_url
-    ]
-    
-    try:
-        probe_output, probe_error = subprocess.Popen(
-            probe_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        ).communicate()
-        metadata = json.loads(probe_output)
+    if width is None or height is None or fps is None:
+        # Get video information using ffprobe
+        probe_cmd = [
+            'ffprobe',
+            '-v', 'quiet',
+            '-print_format', 'json',
+            '-show_streams',
+            '-show_format',
+            '-select_streams', 'v:0',
+            video_url
+        ]
         
-        if not metadata.get('streams'):
-            raise ValueError("No streams found in video file")
-            
-        # Get the first video stream
-        video_stream = metadata['streams'][0]
-        
-        # Extract video properties
         try:
-            width = int(video_stream['width'])
-            height = int(video_stream['height'])
+            probe_output, probe_error = subprocess.Popen(
+                probe_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            ).communicate()
+            metadata = json.loads(probe_output)
             
-            # Parse frame rate which might be in different formats
-            if 'r_frame_rate' in video_stream:
-                num, den = map(int, video_stream['r_frame_rate'].split('/'))
-                fps = num / den
-            elif 'avg_frame_rate' in video_stream:
-                num, den = map(int, video_stream['avg_frame_rate'].split('/'))
-                fps = num / den
-            else:
-                raise KeyError("Could not find frame rate information")
+            if not metadata.get('streams'):
+                raise ValueError("No streams found in video file")
                 
-        except KeyError as e:
-            raise KeyError(f"Missing required video property: {str(e)}")
+            # Get the first video stream
+            video_stream = metadata['streams'][0]
             
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"FFprobe error: {e.stderr.decode()}")
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"Failed to parse FFprobe output: {str(e)}")
+            # Extract video properties
+            try:
+                width = int(video_stream['width'])
+                height = int(video_stream['height'])
+                
+                # Parse frame rate which might be in different formats
+                if 'r_frame_rate' in video_stream:
+                    num, den = map(int, video_stream['r_frame_rate'].split('/'))
+                    fps = num / den
+                elif 'avg_frame_rate' in video_stream:
+                    num, den = map(int, video_stream['avg_frame_rate'].split('/'))
+                    fps = num / den
+                else:
+                    raise KeyError("Could not find frame rate information")
+                    
+            except KeyError as e:
+                raise KeyError(f"Missing required video property: {str(e)}")
+                
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"FFprobe error: {e.stderr.decode()}")
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Failed to parse FFprobe output: {str(e)}")
     
     # Calculate duration based on input parameters
     if start_frame is not None and n_frames is not None:
@@ -114,7 +116,7 @@ def decode_video_frames(video_url, start_frame=None, n_frames=None, start_time=N
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            bufsize=10**8  # Use large buffer size for video data
+            bufsize=32 * 1024 * 1024  # Use 32MB buffer size for video data
         )
         raw_data, stderr = process.communicate()
         
@@ -139,7 +141,7 @@ def decode_video_frames(video_url, start_frame=None, n_frames=None, start_time=N
     frames = np.frombuffer(raw_data, dtype=np.uint8)
     frames = frames.reshape((expected_frames, height, width, 3))
     
-    return frames, metadata
+    return frames
 
 def download_video(self, start_frame_no: int, nframes: int, rect: Rectangle, subsample: int = 1):
     """
