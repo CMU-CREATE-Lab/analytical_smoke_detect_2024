@@ -10,3 +10,4 @@ secrets
 exports
 *.prof
 prof
+venv

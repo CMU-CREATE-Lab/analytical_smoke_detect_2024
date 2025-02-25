@@ -2,10 +2,13 @@
 
 import datetime
 import concurrent
+import json
 import requests
+import re
 from thumbnail_api import Rectangle, BreathecamThumbnail
 import math
 import numpy as np
+import os
 import pandas as pd
 from video_decoder import decode_video_frames
 import pytz
@@ -32,20 +35,45 @@ CAMERAS = {
 }
 
 class TimeMachine:
-    def __init__(self, root_url: str, timezone=pytz.timezone("America/New_York")):
-        self.root_url = root_url
-        self.tm_url = f"{root_url}/tm.json"
-        print(f"Fetching {self.tm_url}")
-        self.tm = requests.get(self.tm_url).json()
+    @staticmethod
+    def find_timemachine_paths_recursively(root_dir):
+        """
+        Recursively find all timemachine paths in the given directory.
+        """
+        import os
+        timemachine_paths = []
+        for dirpath, dirnames, filenames in os.walk(root_dir):
+            for filename in filenames:
+                filepath = os.path.join(dirpath, filename)
+                if filepath.endswith(".timemachine/tm.json"):
+                    timemachine_paths.append(dirpath)
+        return timemachine_paths
+
+    def read_url_or_path(self, url_or_path: str):
+        if url_or_path.startswith("http://") or url_or_path.startswith("https://"):
+            return requests.get(url_or_path).json()
+        else:
+            with open(url_or_path, 'r') as f:
+                return json.load(f)
+            
+
+    def __init__(self, root_url_or_path: str, timezone=pytz.timezone("America/New_York"), verbose=True):
+        self.root_url = root_url_or_path
+        self.tm_url = f"{self.root_url}/tm.json"
+        if verbose:
+            print(f"Fetching {self.tm_url}")
+        self.tm = self.read_url_or_path(self.tm_url)
         datasets = self.tm['datasets']
         assert(len(datasets) == 1)
         dataset = datasets[0]
         id = dataset['id']
-        self.tile_root_url = f"{root_url}/{id}"
+        self.tile_root_url = f"{self.root_url}/{id}"
         self.r_url = f"{self.tile_root_url}/r.json"
-        print(f"Fetching {self.r_url}")
-        self.r = requests.get(self.r_url).json()
-        print(f'TimeMachine has {self.r["nlevels"]} levels and {len(self.capture_times())} frames')
+        if verbose:
+            print(f"Fetching {self.r_url}")
+        self.r = self.read_url_or_path(self.r_url)
+        if verbose:
+            print(f'TimeMachine has {self.r["nlevels"]} levels and {len(self.capture_times())} frames')
         self.timezone = timezone
 
     @cache
@@ -71,6 +99,69 @@ class TimeMachine:
     @classmethod
     def from_breathecam_thumbnail(cls, thumbnail: BreathecamThumbnail):
         return cls(thumbnail.timemachine_root_url())
+    
+    def tile_coords(self):
+        """
+        Enumerate the tiles in the timemachine.
+        """
+        ret = []
+        for l, level in enumerate(self.r['level_info']):
+            cols = list(range(level['cols']))
+            if cols[-1] % 4 != 0:
+                # Add an extra mod-4 column at the end
+                cols.append(cols[-1] // 4 * 4 + 4)
+            for c in cols:
+                rows = list(range(level['rows']))
+                if rows[-1] % 4 != 0:
+                    # Add an extra mod-4 row at the end
+                    rows.append(rows[-1] // 4 * 4 + 4)
+                for r in rows:
+                    is_mod_4 = (r % 4 == 0) and (c % 4 == 0)
+                    ret.append({"l": l, "c": c, "r": r, "is_mod_4": is_mod_4})
+        return ret
+
+    def tile_paths(self):
+        ret = []
+        for tile in self.tile_coords():
+            path = f"{self.tile_root_url}/{tile['l']}/{tile['r']}/{tile['c']}.mp4"
+            ret.append({"path": path, "l": tile["l"], "is_mod_4": tile['is_mod_4']})
+        return ret
+
+    def delete_non_mod4_tiles(self, delete=False):
+        paths = self.tile_paths()
+        # Make sure all mod-4 tiles are present
+        mod_4_tile_count = 0
+        for pathinfo in paths:
+            is_mod_4 = pathinfo['is_mod_4']
+            path = pathinfo['path']
+            if is_mod_4:
+                assert os.path.exists(path), f"Missing {path}"
+                mod_4_tile_count += 1
+        print(f"    Found all {mod_4_tile_count} mod-4 tiles")
+
+        to_delete = []
+        n_non_mod_4 = 0
+
+        for pathinfo in paths:
+            is_mod_4 = pathinfo['is_mod_4']
+            path = pathinfo['path']
+            if not is_mod_4:
+                n_non_mod_4 += 1
+                if os.path.exists(path):
+                    to_delete.append(path)
+        
+        if len(to_delete) == 0:
+            print("    No non-mod-4 tiles to delete")
+        else:
+            print(f"    Found {len(to_delete)} non-mod-4 tiles to delete (out of a possible {n_non_mod_4})")
+            for path in to_delete:
+                l, c, r = [int(s) for s in re.search(r"(\d+)/(\d+)/(\d+)\.mp4$", path).groups()]
+                assert not (c % 4 == 0 and r % 4 == 0), f"Tile {path} is mod-4, but was marked for deletion"
+                if delete:
+                    os.remove(path)
+            if delete:
+                print(f"    Deleted {len(to_delete)} non-mod-4 tiles")
+        return to_delete
 
     @staticmethod
     def download(
@@ -104,33 +195,33 @@ class TimeMachine:
         if time is None:
             raise Exception("Time not set.")
 
-        date_str = date.strftime("%Y-%m-%d")
-        time_str = get_time(time)
-        start_time = f"{date_str} {time_str.strftime('%H:%M:%S')}"
-        url = f"{BASE_URL}/{CAMERAS[location]}/{date_str}.timemachine"
+        # date_str = date.strftime("%Y-%m-%d")
+        # time_str = get_time(time)
+        # start_time = f"{date_str} {time_str.strftime('%H:%M:%S')}"
+        # url = f"{BASE_URL}/{CAMERAS[location]}/{date_str}.timemachine"
 
-        tm = TimeMachine(url)
+        # tm = TimeMachine(url)
 
-        start_frame = tm.frame_from_date(start_time)
+        # start_frame = tm.frame_from_date(start_time)
         
-        if start_frame < 0:
-            raise Exception("First frame invalid.")
-            return None
+        # if start_frame < 0:
+        #     raise Exception("First frame invalid.")
+        #     return None
         
-        remaining_frames = len(tm.capture_times()) - start_frame
+        # remaining_frames = len(tm.capture_times()) - start_frame
 
-        if remaining_frames < frames:
-            frames = remaining_frames
+        # if remaining_frames < frames:
+        #     frames = remaining_frames
 
-        video = tm.download_video(start_frame, frames, view, subsample)
+        # video = tm.download_video(start_frame, frames, view, subsample)
 
-        opacity = np.full((video.shape[0], video.shape[1], video.shape[2], 1), 255, dtype=video.dtype)
-        video = np.concatenate((video, opacity), axis=3) / 255.0
+        # opacity = np.full((video.shape[0], video.shape[1], video.shape[2], 1), 255, dtype=video.dtype)
+        # video = np.concatenate((video, opacity), axis=3) / 255.0
 
-        if frames == 1:
-            return video[0]
-        else:
-            return video
+        # if frames == 1:
+        #     return video[0]
+        # else:
+        #     return video
 
     def download_video_frame_range(self, start_frame_no: int, nframes: int, rect: Rectangle, subsample:int=1, max_threads:int=8):
         """
