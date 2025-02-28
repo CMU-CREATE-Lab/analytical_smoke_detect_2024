@@ -19,6 +19,7 @@ from timemachine import TimeMachine
 from concurrent.futures import ThreadPoolExecutor
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+import re
 
 class Thumbnails:
     @cache
@@ -35,6 +36,23 @@ class Thumbnails:
         thumbnail.resize_rect_preserving_scale(3840, 2160)
 
         return thumbnail
+    
+    @cache
+    @staticmethod
+    def edgar_thomson_south():
+        # Edgar Thomson South
+        url = "https://share.createlab.org/shorturl/breathecam/53f9448ec86ade5b"
+        thumbnail = BreathecamThumbnail(url)
+
+        # Increase resolution to 1:1
+        thumbnail.set_scale(1, 1)
+
+        # Video width must be even
+        if thumbnail.width % 2 == 1:
+            thumbnail.resize_rect_preserving_scale(thumbnail.width - 1, thumbnail.height)
+
+        return thumbnail
+        
 
 
 
@@ -96,8 +114,8 @@ class BatchVideoExporter:
         begin_datetime = et.localize(datetime.datetime.combine(date, begin_time))
         end_datetime = et.localize(datetime.datetime.combine(date, end_time))
 
-
-        os.makedirs(export_directory, exist_ok=True)
+        # Don't create exports directory since we need to symlink it to the web server exports directory
+        #os.makedirs(export_directory, exist_ok=True)
         # Create temporary file in exports directory
         export_filename = site
         export_filename += f"-{begin_datetime.strftime('%Y%m%d-%H%M%S')}"
@@ -155,34 +173,6 @@ class BatchVideoExporter:
         # Update local dataframe
         self.df.at[row_idx, "Video"] = value
 
-    def upload_to_drive(self, file_path):
-        """Upload file to Google Drive and make it world-readable"""
-        creds = ServiceAccountCredentials.from_json_keyfile_name(
-            "secrets/createlab-breathecam-bulk-video-generation-58427be4b55f.json",
-            ['https://www.googleapis.com/auth/drive']
-        )
-        drive_service = build('drive', 'v3', credentials=creds)
-        
-        file_metadata = {
-            'name': os.path.basename(file_path),
-            'parents': ['root']
-        }
-        media = MediaFileUpload(file_path, resumable=True)
-        
-        file = drive_service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields='id,webViewLink'
-        ).execute()
-        
-        # Make the file world-readable
-        drive_service.permissions().create(
-            fileId=file['id'],
-            body={'type': 'anyone', 'role': 'reader'},
-            fields='id'
-        ).execute()
-        
-        return file['webViewLink']
 
     def export_next(self):
         """Export the next video in the queue"""
@@ -198,8 +188,11 @@ class BatchVideoExporter:
         try:
             export_path = self.export_video(row)
 
+            web_export_prefix = "https://videos.breathecam.org/"
+
             # Upload to Google Drive
-            video_url = self.upload_to_drive(export_path)
+            #video_url = self.upload_to_drive(export_path)
+            video_url = web_export_prefix + os.path.basename(export_path)
             video_link = f'=hyperlink("{video_url}", "{os.path.basename(export_path)}")'
             self.update_spreadsheet_cell(row_idx, video_link)
             return True
@@ -210,12 +203,16 @@ class BatchVideoExporter:
         
 def render_video(site: str, begin_datetime: datetime.datetime, end_datetime: datetime.datetime, export_path: str):
     site = site.lower()
+    # Replace each string of one or more non-alnum characters with a single _
+    site = re.sub(r'[^a-z0-9]+', '_', site)
+
     # Assert begin and end have timezones
     assert begin_datetime.tzinfo is not None, "begin_datetime must have a timezone"
     assert end_datetime.tzinfo is not None, "end_datetime must have a timezone"
     # Assert site matches an attribute in Thumbnails
-    assert hasattr(Thumbnails, site), f"Invalid site: {site}"
+    assert hasattr(Thumbnails, site), f"Site {site} not found in Thumbnails"
     thumbnail = getattr(Thumbnails, site)().copy()
+
     thumbnail.set_begin_end_times(begin_datetime, end_datetime)
     assert thumbnail.scale() == (1, 1), "Thumbnail must have a scale of 1:1"
 
@@ -247,7 +244,21 @@ def render_video(site: str, begin_datetime: datetime.datetime, end_datetime: dat
         temp_path
     ]
     
-    process = subprocess.Popen(command, stdin=subprocess.PIPE)
+    # Create a list to store output
+    ffmpeg_output = []
+    
+    # Set up the process with stderr redirected to stdout
+    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    
+    # Start a thread to read and capture output
+    def capture_output():
+        for line in iter(process.stdout.readline, b''):
+            line_str = line.decode('utf-8', errors='replace')
+            ffmpeg_output.append(line_str)
+            
+    output_thread = threading.Thread(target=capture_output)
+    output_thread.daemon = True
+    output_thread.start()
 
     start_frame = timemachine.frameno_from_date_after_or_equal(begin_datetime)
     end_frame = timemachine.frameno_from_date_before_or_equal(end_datetime)
@@ -273,11 +284,20 @@ def render_video(site: str, begin_datetime: datetime.datetime, end_datetime: dat
     with ThreadPoolExecutor(max_workers=1) as executor:
         # Submit all jobs and store futures in order
         futures = list(executor.map(download_chunk, chunk_infos))
+        # TODO: are we resoving future only as we need them?  If we're resolving all first it will take lots of ram and remove a pipelining opportunity
 
         # Write frames to ffmpeg process in correct order
         for frames in futures:
             for frame in frames:
-                process.stdin.write(frame.tobytes())
+                try:
+                    process.stdin.write(frame.tobytes())
+                except Exception as e:
+                    print(f"Error writing frame to ffmpeg process: {str(e)}")
+                    print("ffmpeg output:")
+                    for line in ffmpeg_output:
+                        print(line.strip())
+                    raise
+            process.stdin.flush()
     
     process.stdin.close()
     process.wait()

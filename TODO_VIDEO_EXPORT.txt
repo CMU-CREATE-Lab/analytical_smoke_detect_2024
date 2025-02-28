@@ -1,3 +1,14 @@
+Version 0.2:
+    DONE Try shards for second video and benchmark
+    DONE Batch Exporter encodes using ffmpeg as binary shards arrive
+    DONE Batch Exporter writes outputs, atomically, to filesystem
+    DONE Batch Exporter uses web prefix and writes to spreadsheet
+    Create 4K Edgar Thomson view
+    Export Edgar Thomson days
+    Email Natisha and Mark.  Ask about other months, and need for timestamps or not.
+    Create 4K Shenango view
+    Find shenango days and export for Mark
+
 Version 0.1:
     DONE Modify thumbnail_api to use constructor instead of from_url, and do inheritance right in constructor
     DONE Figure out correct bounds and subsample from thumbnail dimensions
@@ -14,8 +25,4 @@ Version 0.1:
     DONE Try second video ("medium") and benchmark
     DONE Commit
 
-Version 0.2:
-    Try shards for second video and benchmark
-    Batch Exporter requests multiple timemachine video downloads, in parallel, received as numpy assert_array_almost_equal
-    Batch Exporter encodes using ffmpeg as binary shards arrive
     

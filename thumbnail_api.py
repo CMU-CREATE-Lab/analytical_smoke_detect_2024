@@ -244,7 +244,7 @@ class Thumbnail:
 class BreathecamThumbnail(Thumbnail):
     def __init__(self, url: str):
         super().__init__(url)
-        assert self.root == "https://breathecam.org/"
+        assert self.root == "https://breathecam.org/" or self.root == "https://breathecam.org", "Root URL must be https://breathecam.org/"
 
     def copy(self) -> 'BreathecamThumbnail':
         return copy.deepcopy(self)
