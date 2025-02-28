@@ -1,7 +1,7 @@
 jupyter
 ipython
 requests
-pandas
+pandas>=1.0.0
 geopandas
 matplotlib
 plotly
@@ -17,3 +17,7 @@ pytest-profiling
 yappi
 google-api-python-client
 ffmpeg-python
+beautifulsoup4>=4.9.0
+psycopg2-binary>=2.8.5
+Flask>=2.0.0
+SQLAlchemy>=1.4.0
