@@ -24,11 +24,38 @@
         width: 80px;
         margin-top: 5px;
       }
+      #filter-controls {
+        border: 1px solid #ccc;
+        padding: 10px 15px;
+        width: 430px;
+        border-radius: 5px;
+        margin-bottom: 30px;
+      }
+      #filter-controls legend {
+        font-weight: bold;
+        padding: 0 10px;
+        font-size: 14px;
+        color: #333;
+      }
+      #filter-controls label {
+       margin-right: 10px;
+      }
     </style>
 </head>
 
 <body>
   <h1 id="site-title">{{ run_name }}</h1>
+
+  <fieldset id="filter-controls">
+    <legend>Filter Videos</legend>
+
+    <label><input type="checkbox" class="filter" value="smoke"> Smoke</label>
+    <label><input type="checkbox" class="filter" value="steam"> Steam</label>
+    <label><input type="checkbox" class="filter" value="shadow"> Shadow</label>
+    <label><input type="checkbox" class="filter" value="none"> None</label>
+
+    <button id="reset-filters">Reset Filters</button>
+  </fieldset>
 
   {% for video in videos %}
   <div class="video-container">
@@ -102,23 +129,68 @@
           });
 
           socket.emit('update-video-classifications', { id: group, classifications: checkedValues });
-
-        //   $.ajax({
-        //       url: '/update-video-classifications',
-        //       method: 'POST',
-        //       contentType: 'application/json',
-        //       data: JSON.stringify({
-        //           id: group,
-        //           classifications: checkedValues
-        //       }),
-        //       success: function(response) {
-        //           console.log('Server response:', response);
-        //       },
-        //       error: function(xhr, status, error) {
-        //           console.error('Error:', error);
-        //       }
-        //   });
         });
+
+        function loadFiltersFromURL() {
+          let urlParams = new URLSearchParams(window.location.search);
+          let filters = urlParams.get("filters");
+
+          if (filters) {
+            let filterArray = filters.split(",");
+            $(".filter").each(function () {
+              $(this).prop("checked", filterArray.includes($(this).val()));
+            });
+          }
+
+          filterVideos();
+        }
+
+        function updateURLFilters() {
+          let selectedFilters = $(".filter:checked").map(function () {
+            return $(this).val();
+          }).get();
+
+          let newURL = window.location.pathname;
+          if (selectedFilters.length > 0) {
+            newURL += "?filters=" + selectedFilters.join(",");
+          }
+
+          history.replaceState(null, "", newURL);
+        }
+
+        function filterVideos() {
+          let selectedFilters = $(".filter:checked").map(function () {
+            return $(this).val();
+          }).get();
+
+          $(".video-container").each(function () {
+            let checkedValues = $(this).find('.checkbox-group input[type="checkbox"]:checked').map(function () {
+              return $(this).val();
+            }).get();
+
+            if (selectedFilters.length === 0) {
+              $(this).show();
+              return;
+            }
+
+            // Show if at least one checked checkbox matches a selected filter
+            let match = selectedFilters.some(filter => checkedValues.includes(filter));
+            $(this).toggle(match);
+          });
+        }
+
+        $(".filter").on("change", function () {
+          updateURLFilters();
+          filterVideos();
+        });
+
+        $("#reset-filters").click(function () {
+          $(".filter").prop("checked", false);
+          updateURLFilters();
+          filterVideos();
+        });
+
+        loadFiltersFromURL(); // Apply filters from URL on page load
       }
 
       $(init);
