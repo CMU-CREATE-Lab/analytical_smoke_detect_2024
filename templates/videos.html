@@ -49,7 +49,7 @@
   <fieldset id="filter-controls">
     <legend>Filter Videos</legend>
 
-    {% for classification, value in classifications.items() %}
+    {% for classification, value in classification_options.items() %}
       <label><input type="checkbox" class="filter" value="{{classification}}"> {{classification}}</label>
     {% endfor %}
 
@@ -61,7 +61,7 @@
     <video src="{{ video.src }}" loop muted controls playbackRate=0.5></video>
     <div class="label">{{ video.label_text }}</div>
     <div class="checkbox-group" data-group="{{video.record_id}}">
-      {% for classification, value in classifications.items() %}
+      {% for classification, value in video.classifications.items() %}
         <input type="checkbox" {% if value == true %}checked{% endif %} id="{{video.record_id}}_{{classification}}" name="{{video.record_id}}" value={{classification}}>
         <label for="{{video.record_id}}_{{classification}}">{{ classification }}</label>
       {% endfor %}

@@ -34,7 +34,8 @@ def get_videos_for_run(run_name):
             # Parse metadata to extract video details
             metadata = row['metadata']
             if index == 0:
-                classifications = row['classifications']
+                classification_options = row['classifications']
+            classifications = row['classifications']
             record_id = row['id']
             
             # Extract video number
@@ -65,6 +66,7 @@ def get_videos_for_run(run_name):
                     "density": float(density_info.group(1)),
                     "white_pixels": int(white_pixels.group(1)) if white_pixels else 0,
                     "label_text": metadata,
+                    "classifications": classifications,
                     "record_id": record_id
                 }
                 videos.append(video_data)
@@ -79,7 +81,7 @@ def get_videos_for_run(run_name):
     # Sort videos by their number
     videos.sort(key=lambda v: v["number"])
     
-    return (videos,classifications)
+    return (videos,classification_options)
 
 def get_available_runs():
     """Get a list of all available run names in the database"""
@@ -108,7 +110,7 @@ def index():
 @app.route('/label/<run_name>')
 def show_videos(run_name):
     """Show videos for a specific run"""
-    videos, classifications = get_videos_for_run(run_name)
+    videos, classification_options = get_videos_for_run(run_name)
     
     if not videos:
         return render_template('error.html', 
@@ -117,7 +119,7 @@ def show_videos(run_name):
     return render_template('videos.html', 
                           videos=videos, 
                           run_name=run_name,
-                          classifications=classifications)
+                          classification_options=classification_options)
 
 
 @socketio.on('connect')
