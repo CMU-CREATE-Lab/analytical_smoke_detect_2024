@@ -2,6 +2,7 @@
 <html>
 <head>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
     <style>
       img {height:300px}
       body {margin:0px}
@@ -11,12 +12,17 @@
         width: 100%;
       }
       .label {
-        font-size: 17px;
+        font-size: 9px;
       }
       .video-container {
         display: inline-flex;
         flex-flow: column nowrap;
         margin: 3px;
+        padding-bottom: 20px;
+      }
+      .checkbox-group {
+        width: 80px;
+        margin-top: 5px;
       }
     </style>
 </head>
@@ -28,15 +34,25 @@
   <div class="video-container">
     <video src="{{ video.src }}" loop muted controls playbackRate=0.5></video>
     <div class="label">{{ video.label_text }}</div>
+    <div class="checkbox-group" data-group="{{video.record_id}}">
+      {% for classification, value in video.classifications.items() %}
+        <input type="checkbox" {% if value == true %}checked{% endif %} id="{{video.record_id}}_{{classification}}" name="{{video.record_id}}" value={{classification}}>
+        <label for="{{video.record_id}}_{{classification}}">{{ classification }}</label>
+      {% endfor %}
+    </div>
   </div>
   {% endfor %}
 
   <script>
+
+      // TODO: change URL for production
+      const socket = io.connect('http://127.0.0.1:5000');
+
       var ggg;
       function fixupVideo(v) {
-        console.log(v);
+        //console.log(v);
         var d = v.wrap('<div/>');
-        console.log(d);
+        //console.log(d);
         if (v.attr('playbackRate')) {
           v[0].playbackRate = parseFloat($(v).attr('playbackRate'));
         }
@@ -47,15 +63,15 @@
       }
 
       function init() {
-        console.log('init');
+        //console.log('init');
         let observer = new IntersectionObserver(
           (entries, observer) => {
             for (entry of entries) {
               if (entry.isIntersecting) {
-                console.log('play', entry.target);
+                //console.log('play', entry.target);
                 entry.target.play();
               } else  {
-                console.log('pause', entry.target);
+                //console.log('pause', entry.target);
                 entry.target.pause(); 
               }
             }
@@ -65,8 +81,43 @@
         
         $('img,video').each(function(i,v){
           fixupVideo($(v));
-          console.log('setting up', v);
+          //console.log('setting up', v);
           observer.observe(v);
+        });
+
+        socket.on('checkbox-update', (data) => {
+            var group = $('.checkbox-group[data-group="' + data.id + '"]');
+            group.children("input").each(function() {
+              $(this).prop('checked', data.classifications[$(this).val()]);
+            });
+        });
+
+        $(document).on('change', 'input[type="checkbox"]', function() {
+          var group = $(this).closest('.checkbox-group').data('group');
+          var checkboxesInGroup = $('input[name="'+$(this).attr('name')+'"]');
+          var checkedValues = {};
+
+          checkboxesInGroup.each(function() {
+            checkedValues[$(this).val()] = $(this).prop('checked');
+          });
+
+          socket.emit('update-video-classifications', { id: group, classifications: checkedValues });
+
+        //   $.ajax({
+        //       url: '/update-video-classifications',
+        //       method: 'POST',
+        //       contentType: 'application/json',
+        //       data: JSON.stringify({
+        //           id: group,
+        //           classifications: checkedValues
+        //       }),
+        //       success: function(response) {
+        //           console.log('Server response:', response);
+        //       },
+        //       error: function(xhr, status, error) {
+        //           console.error('Error:', error);
+        //       }
+        //   });
         });
       }
 

@@ -1,12 +1,14 @@
-from flask import Flask, render_template
-import os
+from flask import Flask, render_template, request, jsonify
 import re
 import json
 import psycopg2
 from psycopg2.extras import DictCursor
-from collections import defaultdict
+from flask_socketio import SocketIO
 
 app = Flask(__name__)
+socketio = SocketIO(app)
+
+connected_clients = {}
 
 def get_db_connection():
     """Create a database connection to the PostgreSQL database"""
@@ -30,6 +32,8 @@ def get_videos_for_run(run_name):
         for row in cur.fetchall():
             # Parse metadata to extract video details
             metadata = row['metadata']
+            classifications = row['classifications']
+            record_id = row['id']
             
             # Extract video number
             video_num = re.search(r'Video (\d+)', metadata)
@@ -58,7 +62,9 @@ def get_videos_for_run(run_name):
                     "area": int(area_info.group(1)),
                     "density": float(density_info.group(1)),
                     "white_pixels": int(white_pixels.group(1)) if white_pixels else 0,
-                    "label_text": metadata
+                    "label_text": metadata,
+                    "classifications": classifications,
+                    "record_id": record_id
                 }
                 videos.append(video_data)
             
@@ -110,6 +116,46 @@ def show_videos(run_name):
     return render_template('videos.html', 
                           videos=videos, 
                           run_name=run_name)
+
+
+@socketio.on('connect')
+def handle_connect():
+    print('Client connected:', request.sid)
+    connected_clients[request.sid] = request
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('Client disconnected:', request.sid)
+    if request.sid in connected_clients:
+        del connected_clients[request.sid]
+
+# @app.route('/update-video-classifications', methods=['POST'])
+@socketio.on('update-video-classifications')
+def set_classification_state(data):
+    try:
+        #raw_data = request.data
+        #data = json.loads(raw_data)
+        id = data.get('id')
+        classifications_data = json.dumps(data.get('classifications'))
+
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=DictCursor)
+
+        cur.execute(
+            "UPDATE video_labels SET classifications = %s WHERE id = %s",
+            (classifications_data, id)
+        )
+        conn.commit()
+
+        for sid in connected_clients:
+            if sid != request.sid:
+                socketio.emit('checkbox-update', {'id': id, 'classifications': json.loads(classifications_data)}, room=sid)
+
+        return jsonify({'message': 'Video classifications updated successfully'}), 200
+    except Exception as e:
+        # Handle unexpected errors
+        print(f"Error: {e}")
+        return jsonify({'message': f'Error: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
