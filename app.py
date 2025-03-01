@@ -19,6 +19,7 @@ def get_db_connection():
 def get_videos_for_run(run_name):
     """Get all videos for a specific run from the database"""
     videos = []
+    classifications = {}
     
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=DictCursor)
@@ -29,10 +30,11 @@ def get_videos_for_run(run_name):
             (run_name,)
         )
         
-        for row in cur.fetchall():
+        for index, row in enumerate(cur.fetchall()):
             # Parse metadata to extract video details
             metadata = row['metadata']
-            classifications = row['classifications']
+            if index == 0:
+                classifications = row['classifications']
             record_id = row['id']
             
             # Extract video number
@@ -63,7 +65,6 @@ def get_videos_for_run(run_name):
                     "density": float(density_info.group(1)),
                     "white_pixels": int(white_pixels.group(1)) if white_pixels else 0,
                     "label_text": metadata,
-                    "classifications": classifications,
                     "record_id": record_id
                 }
                 videos.append(video_data)
@@ -78,7 +79,7 @@ def get_videos_for_run(run_name):
     # Sort videos by their number
     videos.sort(key=lambda v: v["number"])
     
-    return videos
+    return (videos,classifications)
 
 def get_available_runs():
     """Get a list of all available run names in the database"""
@@ -107,7 +108,7 @@ def index():
 @app.route('/label/<run_name>')
 def show_videos(run_name):
     """Show videos for a specific run"""
-    videos = get_videos_for_run(run_name)
+    videos, classifications = get_videos_for_run(run_name)
     
     if not videos:
         return render_template('error.html', 
@@ -115,7 +116,8 @@ def show_videos(run_name):
     
     return render_template('videos.html', 
                           videos=videos, 
-                          run_name=run_name)
+                          run_name=run_name,
+                          classifications=classifications)
 
 
 @socketio.on('connect')

@@ -49,10 +49,9 @@
   <fieldset id="filter-controls">
     <legend>Filter Videos</legend>
 
-    <label><input type="checkbox" class="filter" value="smoke"> Smoke</label>
-    <label><input type="checkbox" class="filter" value="steam"> Steam</label>
-    <label><input type="checkbox" class="filter" value="shadow"> Shadow</label>
-    <label><input type="checkbox" class="filter" value="none"> None</label>
+    {% for classification, value in classifications.items() %}
+      <label><input type="checkbox" class="filter" value="{{classification}}"> {{classification}}</label>
+    {% endfor %}
 
     <button id="reset-filters">Reset Filters</button>
   </fieldset>
@@ -62,7 +61,7 @@
     <video src="{{ video.src }}" loop muted controls playbackRate=0.5></video>
     <div class="label">{{ video.label_text }}</div>
     <div class="checkbox-group" data-group="{{video.record_id}}">
-      {% for classification, value in video.classifications.items() %}
+      {% for classification, value in classifications.items() %}
         <input type="checkbox" {% if value == true %}checked{% endif %} id="{{video.record_id}}_{{classification}}" name="{{video.record_id}}" value={{classification}}>
         <label for="{{video.record_id}}_{{classification}}">{{ classification }}</label>
       {% endfor %}
