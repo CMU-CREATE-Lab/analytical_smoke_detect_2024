@@ -16,6 +16,14 @@ def get_db_connection():
     conn.autocommit = True
     return conn
 
+classification_options = [
+    "smoke",
+    "steam",
+    "shadow",
+    "other_motion",
+    "none"
+]
+
 def get_videos_for_run(run_name):
     """Get all videos for a specific run from the database"""
     videos = []
@@ -33,9 +41,12 @@ def get_videos_for_run(run_name):
         for index, row in enumerate(cur.fetchall()):
             # Parse metadata to extract video details
             metadata = row['metadata']
-            if index == 0:
-                classification_options = row['classifications']
             classifications = row['classifications']
+            # For any classification in classification_options, if it
+            # is not present in the database, set it to False
+            for opt in classification_options:
+                if opt not in classifications:
+                    classifications[opt] = False
             record_id = row['id']
             
             # Extract video number

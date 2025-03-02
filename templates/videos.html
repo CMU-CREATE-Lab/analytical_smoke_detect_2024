@@ -21,13 +21,23 @@
         padding-bottom: 20px;
       }
       .checkbox-group {
-        width: 80px;
+        width: fit-content;
         margin-top: 5px;
+        display: flex;
+        flex-direction: column;
+      }
+      .checkbox-item {
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+      }
+      .checkbox-item input[type="checkbox"] {
+        margin-right: 5px;
       }
       #filter-controls {
         border: 1px solid #ccc;
         padding: 10px 15px;
-        width: 430px;
+        width: fit-content;
         border-radius: 5px;
         margin-bottom: 30px;
       }
@@ -49,7 +59,7 @@
   <fieldset id="filter-controls">
     <legend>Filter Videos</legend>
 
-    {% for classification, value in classification_options.items() %}
+    {% for classification in classification_options %}
       <label><input type="checkbox" class="filter" value="{{classification}}"> {{classification}}</label>
     {% endfor %}
 
@@ -62,8 +72,10 @@
     <div class="label">{{ video.label_text }}</div>
     <div class="checkbox-group" data-group="{{video.record_id}}">
       {% for classification, value in video.classifications.items() %}
-        <input type="checkbox" {% if value == true %}checked{% endif %} id="{{video.record_id}}_{{classification}}" name="{{video.record_id}}" value={{classification}}>
-        <label for="{{video.record_id}}_{{classification}}">{{ classification }}</label>
+        <div class="checkbox-item">
+          <input type="checkbox" {% if value == true %}checked{% endif %} id="{{video.record_id}}_{{classification}}" name="{{video.record_id}}" value={{classification}}>
+          <label for="{{video.record_id}}_{{classification}}">{{ classification }}</label>
+        </div>
       {% endfor %}
     </div>
   </div>
@@ -113,7 +125,7 @@
 
         socket.on('checkbox-update', (data) => {
             var group = $('.checkbox-group[data-group="' + data.id + '"]');
-            group.children("input").each(function() {
+            group.find("input").each(function() {
               $(this).prop('checked', data.classifications[$(this).val()]);
             });
         });
