@@ -1,5 +1,16 @@
 (Also see TODO_VIDEO_EXPORT.txt)
 
+
+Version 0.3.1 (annotation)
+DONE PD/RS: Create postgres table with one of the video outputs
+DONE PD/RS: Serve statically the video outputs (such that range request works)
+DONE PD/RS: Create hello world flask that can list the table and videos
+Checkboxes:
+[] smoke [] steam [] shadow [] none
+
+
+
+
 Version 0.3
 HH: Download sequence of images via thumbnail_api
 HH: Try time-series / video.  Can we do patches for video?

@@ -36,7 +36,7 @@ def test_timemachine_download():
     # Download the tile directly for comparison
     print("\nDownloading tile directly for comparison...")
     tile_url = "https://tiles.cmucreatelab.org/ecam/timemachines/clairton4/2024-10-23.timemachine/crf26-12fps-1424x800/2/4/0.mp4"
-    full_frames, _ = decode_video_frames(
+    full_frames = decode_video_frames(
         video_url=tile_url,
         start_frame=0,
         n_frames=15

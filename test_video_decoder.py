@@ -9,7 +9,7 @@ def test_video_decoder():
     
     # Test 1: Basic functionality and dimensions
     print("Fetching first 30 frames...")
-    frames_30, metadata = decode_video_frames(
+    frames_30 = decode_video_frames(
         video_url=url,
         start_frame=0,
         n_frames=30
@@ -28,7 +28,7 @@ def test_video_decoder():
     
     # Test 2: Frame consistency with subset
     print("\nFetching frames 5-25...")
-    frames_subset, _ = decode_video_frames(
+    frames_subset = decode_video_frames(
         video_url=url,
         start_frame=5,
         n_frames=20
@@ -49,11 +49,11 @@ def test_video_decoder():
     print("Frame consistency check passed")
     
     # Print video metadata
-    print("\nVideo Metadata:")
-    stream = metadata['streams'][0]
-    print(f"Codec: {stream.get('codec_name')}")
-    print(f"Frame rate: {stream.get('r_frame_rate')}")
-    print(f"Duration: {metadata['format'].get('duration')}s")
+    #print("\nVideo Metadata:")
+    #stream = metadata['streams'][0]
+    #print(f"Codec: {stream.get('codec_name')}")
+    #print(f"Frame rate: {stream.get('r_frame_rate')}")
+    #print(f"Duration: {metadata['format'].get('duration')}s")
     
 
 if __name__ == '__main__':

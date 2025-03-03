@@ -1,6 +1,5 @@
 venv
 .junkyard
-venv
 __pycache__
 frame0_differences.jpg
 subsample1_downscaled_frame0.jpg
@@ -10,3 +9,5 @@ secrets
 exports
 *.prof
 prof
+nohup.out
+detected
