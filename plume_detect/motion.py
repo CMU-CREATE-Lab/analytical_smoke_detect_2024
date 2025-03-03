@@ -1,284 +1,76 @@
 import cv2 as cv
-import math
 import numpy as np
 
 from collections import defaultdict, namedtuple
 from itertools import product
-from typing import Literal, Union
+from typing import Callable, Literal, Union
 
-from .cmn import DisjointSet, video_to_html, videos_to_html, videos_to_html_stack
-from .view import View
+from cmn import DisjointSet
+from view import View
 
-Color = namedtuple('Color', ["red", "green", "blue"])
-Point = namedtuple("Point", ["frame", "row", "column"])
-
-BLACK = Color(0, 0, 0)
-BLUE = Color(0, 0, 255)
-GRAY = Color(128, 128, 128)
-GREEN = Color(0, 255, 0)
-ORANGE = Color(255, 128, 0)
-PURPLE = Color(128, 0, 128)
-RED = Color(255, 0, 0)
-WHITE = Color(255, 255, 255)
-YELLOW = Color(255, 255, 0)
+FramePadding = Union[int, tuple[int, int]]
+PixelPadding = Union[int, tuple[int, int], tuple[int, int, int, int]]
 
 
-class Contour:
-    """A collection of triples, where each triple is the frame, row, and column of a pixel."""
+class TemporalContour:
+    """A collection of coordinates in a video corresponding to motion."""
 
-    def __init__(self, points: list[Union[tuple[int, int, int], Point]]):
-        """Creates a new contour from a list of points, which are either (frame, row, column) or `Point` triples."""
-        self.array = np.array(points)
-        self.frames = np.sort(np.unique(self.array[:, 0]))
-        self.points = [point if isinstance(point, Point) else Point(*point) for point in points]
+    def __init__(self, points: list[tuple[int, int, int]]):
+        """Creates a new contour from a list of points
 
-    def __getitem__(self, index):
-        """Indexes the underlying NumPy array of points."""
-        return self.array[index]
-
-    def __len__(self):
-        """Number of points in the contour."""
-        return len(self.points)
-
-    def bounding_rect(self) -> View:
-        """The smallest rectangle containing every point in the contour."""
-        max_y, max_x = 0, 0
-        min_y, min_x = 2147483647, 2147483647
+        Parameters
+        ----------
+        * points - a collection of (frame, row, column) triples
+        """
+        self.points = np.array(points)
+        self.frames = np.sort(np.unique(self.points[:, 0]))
+        self.number_of_frames = len(self.frames)
+        self.number_of_points = len(points)
+        max_y, max_x, min_y, min_x = 0, 0, 2147483647, 2147483647
 
         for frame in self.frames:
-            mask_candidates = self.array[:, 0] == frame
-            points = self.array[mask_candidates][:, 1:]
-            y_values = points[:, 0]
-            x_values = points[:, 1]
+            mask_candidates = self.points[:, 0] == frame
+            points = self.points[mask_candidates, 1:]
+            y_values, x_values = points[:, 0], points[:, 1]
 
-            max_y = np.max([max_y, np.max(y_values)])
-            max_x = np.max([max_x, np.max(x_values)])
-            min_y = np.min([min_y, np.min(y_values)])
-            min_x = np.min([min_x, np.min(x_values)])
+            max_y = max(max_y, np.max(y_values))
+            max_x = max(max_x, np.max(x_values))
+            min_y = min(min_y, np.min(y_values))
+            min_x = min(min_x, np.min(x_values))
 
-        return View(min_x, min_y, max_x, max_y)
-
-
-class Event:
-    """Visualizes a contour on a background."""
-
-    def __init__(self, video: np.ndarray, contour: Contour, *, bgcolor: Color = BLACK, fgcolor: Color = GRAY):
-        self.height, self.width = video.shape[1:3]
-        self.contour = contour
-        self.region = contour.bounding_rect()
-        self.frames = contour.frames
-        self.background = bgcolor
-        self.foreground = fgcolor
-
-        video_frames = []
-        masks = []
-        masked_frames = []
-
-        for frame in contour.frames:
-            mask = np.full((self.height, self.width, 3), bgcolor, dtype=np.uint8)
-            masked_frame = np.full((self.height, self.width, 3), bgcolor, dtype=video.dtype)
-
-            mask_candidates = contour[:, 0] == frame
-            points = contour[mask_candidates][:, 1:]
-
-            for y, x in points:
-                mask[y, x] = fgcolor
-                masked_frame[y, x] = video[frame, y, x]
-
-            video_frames.append(video[frame])
-            masks.append(mask)
-            masked_frames.append(masked_frame)
-
-        self.video = np.array(video_frames)
-        self.masks = np.array(masks)
-        self.masked_frames = np.array(masked_frames)
-
-    @property
-    def size(self) -> tuple[int, int]:
-        return self.region.width, self.region.height
+        self.region = View(min_x, min_y, max_x, max_y)
+        self.width = self.region.width
+        self.height = self.region.height
     
-    def __len__(self):
-        """Number of frames in the event."""
-        return len(self.frames)
-
-    def density(self, digits: Union[int, None] = 3) -> float:
-        n, w, h = self.video.shape[:-1]
-
-        return round(len(self.contour) / (n * w * h), digits)
+    def density(self, digits: int = 3) -> float:
+        return round(self.number_of_points / (len(self.frames) * self.region.width * self.region.height), digits)
     
-    def region_density(self, digits: int = 3) -> float:
-        return round(len(self.contour) / (self.video.shape[0] * self.region.width * self.region.height), digits)
-
-        return np.array(upsampled_video)
-    
-    def get_masked_video(self) -> np.ndarray:
-        """HTML for masked video."""
-        l, t, r, b = self.region.left, self.region.top, self.region.right, self.region.bottom
-        video = [f[t:(b + 1), l:(r + 1), :] for f in self.masked_frames]
-
-        return np.array(video)
-    
-    def get_video(self) -> np.ndarray:
-        """HTML for the input video, contour masks, and the masked video."""
-        l, t, r, b = self.region.left, self.region.top, self.region.right, self.region.bottom
-        video = [f[t:(b + 1), l:(r + 1), :] for f in self.video]
-
-        return np.array(video)
-    
-    def get_upsampled_video(self, 
-                            nlevels: int, 
-                            video: np.ndarray, *,
-                            pad_frames: Union[int, tuple[int, int]] = 0, 
-                            pad_pixels: Union[int, tuple[int, int], tuple[int, int, int, int]] = 0) -> np.ndarray:
-        """HTML for the input video, contour masks, and the masked video."""
-        region = self.region.upsample(nlevels)
-        l, t, r, b = region.left, region.top, region.right, region.bottom
-        n, h, w = video.shape[:3]
-        frame_padding_start, frame_padding_end = (pad_frames, pad_frames) if isinstance(pad_frames, int) else pad_frames
-
-        if isinstance(pad_pixels, int):
-            pixels_l, pixels_t, pixels_r, pixels_b = pad_pixels, pad_pixels, pad_pixels, pad_pixels
-        elif len(pad_pixels) == 2:
-            pixels_l, pixels_t, pixels_r, pixels_b = pad_pixels[0], pad_pixels[1], pad_pixels[0], pad_pixels[1]
-        else:
-            pixels_l, pixels_t, pixels_r, pixels_b = pad_pixels
-
-        l = max(l - pixels_l, 0)
-        t = max(t - pixels_t, 0)
-        r = min(r + pixels_r, w - 1)
-        b = min(b + pixels_b, h - 1)
-        start_frame = max(self.frames[0] - frame_padding_start, 0)
-        end_frame = min(self.frames[-1] + frame_padding_end, n - 1)
-        frame_nos = [
-            *range(start_frame, self.frames[0]),
-            *self.frames,
-            *range(n, end_frame + 1)
-        ]
-
-        return np.array([video[f][t:(b + 1), l:(r + 1), :] for f in frame_nos])
-
-    def with_background_color(self, color: Color):
-        """Changes the background color for contour masks and masked video."""
-        return Event(self.video, self.contour, bgcolor=color, fgcolor=self.foreground)
-
-    def with_colors(self, bgcolor: Color, fgcolor: Color):
-        """Changes the background color for contour masks and masked video, and the foreground color of the mask."""
-        return Event(self.video, self.contour, bgcolor=bgcolor, fgcolor=fgcolor)
-
-    def with_foreground_color(self, color: Color):
-        """Changes the foreground color of the mask."""
-        return Event(self.video, self.contour, bgcolor=self.background, fgcolor=color)
-
-
-class EventSpace:
-    """Collection of events based on a list of contours."""
-
-    def __init__(self, events: list[Event], neighborhood_size: int, temporal_window: int):
-        self.contours = [e.contour for e in events]
-        self.events = events
-        self.neighborhood_size = neighborhood_size
-        self.temporal_window = temporal_window
-
-    @classmethod
-    def from_contours(cls, video: np.ndarray, contours: list[Contour], neighborhood_size: int, temporal_window: int):
-        return cls([Event(video, c) for c in contours], neighborhood_size, temporal_window)
-
-    def __getitem__(self, index):
-        """Gets the event at `index`."""
-        return self.events[index]
-
-    def __len__(self):
-        """The number of events in the space."""
-        return len(self.events)
-    
-    def filter_events(self, *, points: int = 0, frames: int = 0, width: int = 0, height: int = 0) -> "EventSpace":
-        if points < 1 and frames < 1 and width < 1 and height < 1:
-            return self
-        
-        def event_filter(event: Event) -> bool:
-            return (len(event.contour) >= points and 
-                    len(event.contour.frames) >= frames and
-                    event.region.width >= width and
-                    event.region.height >= height)
-        
-        return EventSpace(list(filter(event_filter, self.events)), self.neighborhood_size, self.temporal_window)
-
-    def masks(self, trim: bool = False):
-        """HTML for the contour masks."""
-        if trim:
-            return [e.trimmed_masks() for e in self.events]
-        else:
-            return [e.masks for e in self.events]
-
-    def masked_videos(self, padding: int = 0, trim: bool = False):
-        """HTML for masked video."""
-        if trim:
-            return [e.get_masked_video() for e in self.events]
-        else:
-            return [e.masked_frames for e in self.events]
-    
-    def sorted_by_area(self, *, descending: bool = False) -> "EventSpace":
-        return EventSpace(
-            sorted(self.events, key=lambda e: e.region.width * e.region.height, reverse=descending), 
-            self.neighborhood_size, 
-            self.temporal_window
-        )
-    
-    def sorted_by_points(self, *, descending: bool = False) -> "EventSpace":
-        return EventSpace(
-            sorted(self.events, key=lambda e: len(e.contour), reverse=descending), 
-            self.neighborhood_size, 
-            self.temporal_window
-        )
-    
-    def upsampled_videos(self, 
-                         nlevels: int, 
-                         video: np.ndarray, *,
-                         pad_frames: Union[int, tuple[int, int]] = 0, 
-                         pad_pixels: Union[int, tuple[int, int], tuple[int, int, int, int]] = 0):
-        return [e.get_upsampled_video(nlevels, video, pad_frames=pad_frames, pad_pixels=pad_pixels) for e in self.events]
-
-    def videos(self):
-        return [e.get_video() for e in self.events]
-        
-class Motion:
+class MotionAnalysis:
     """Temporal motion analysis of a video."""
 
     _KERNEL_ = cv.getStructuringElement(cv.MORPH_ELLIPSE, (3, 3))
     _SPATIAL4_ = [(-1, 0), (0, -1), (0, 1), (1, 0)]
     _SPATIAL8_ = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
 
-    def __init__(self, video: np.ndarray, *, detectShadows: bool = True, varThreshold: int = 16):
-        self.depth, self.height, self.width = video.shape[:3]
-        self.depth -= 1
-        self.video = video[1:].copy()
+    def __init__(self, video: np.ndarray, *, background_subtractor):
+        self.video = video
+        self.number_of_frames, self.height, self.width = video.shape[:3]
 
-        bgsub = cv.createBackgroundSubtractorMOG2(detectShadows=detectShadows, varThreshold=varThreshold)
-        bgsub.apply(video[0])
+        masks = [None] * self.number_of_frames
 
-        self.masks = np.array([
-            cv.morphologyEx(bgsub.apply(frame), cv.MORPH_OPEN, Motion._KERNEL_) for frame in video[1:]
-        ])
+        for i in range(self.number_of_frames):
+            masks[i] = cv.morphologyEx(background_subtractor.apply(video[i]), cv.MORPH_OPEN, MotionAnalysis._KERNEL_)
 
-    def event_space(
-            self, 
-            neighborhood: Literal[4, 8] = 8, 
-            span: int = 3, *, 
-            points: int = 0,
-            frames: int = 0,
-            width: int = 0,
-            height: int = 0,
-            threshold: int = 127) -> EventSpace:
-        """Searches the video for temporal contours.
+        self.masks = np.array(masks)
+
+    def contours(self, neighbors: Literal[4, 8] = 8, depth: int = 3, *, threshold: int = 127) -> list[TemporalContour]:
+        """Analyzes the video producing temporal contours.
         
         Parameters
         ----------
-        * neighborhood - number of neighboring pixels to check
-        * span - number of frames to look back/forward
-        * points - minimum number of points required in the contour of an event
-        * frames - minimum number of frames required for an event
-        * width - minimum width of an event
-        * height - minimum height of an event
+        * neighbors - number of neighboring pixels to consider
+        * depth - number of frames to look backward/forward
+        * threshold - value in range [0, 255], any value greater than `threshold` will be considered.
 
         Returns
         -------
@@ -286,19 +78,21 @@ class Motion:
         A collection of events, where each event visualizes a list of 3D contours over
         the input video.
         """
-        def is_valid(frame, row, col):
-            return 0 <= frame < self.depth and 0 <= row < self.height and 0 <= col < self.width and vid[frame, row, col]
-
         vid = self.masks > threshold
-        spatial_neighbors = Motion._SPATIAL8_ if neighborhood == 8 else Motion._SPATIAL4_
+        spatial_neighbors = MotionAnalysis._SPATIAL8_ if neighbors == 8 else MotionAnalysis._SPATIAL4_
         labels, label_set, next_label = np.zeros_like(vid, dtype=np.int32), DisjointSet(), 1
 
-        for f, r, c in product(range(self.depth), range(self.height), range(self.width)):
+        for f, r, c in product(range(self.number_of_frames), range(self.height), range(self.width)):
             if not vid[f, r, c]:
                 continue
 
-            nbrs = [(f, y, x) for y, x in [(r + dy, c + dx) for dy, dx in spatial_neighbors] if is_valid(f, y, x)]
-            nbrs += [(t, r, c) for t in [f - dt for dt in range(1, span + 1)] if t >= 0 and vid[t, r, c]]
+            nbrs = []
+
+            for y, x in [(r + dy, c + dx) for dy, dx in spatial_neighbors]:
+                if 0 <= f < self.number_of_frames and 0 <= y < self.height and 0 <= x < self.width and vid[f, y, x]:
+                    nbrs.append((f, y, x))
+
+            nbrs += [(t, r, c) for t in [f - dt for dt in range(1, depth + 1)] if t >= 0 and vid[t, r, c]]
 
             if nbrs:
                 if non_zero_labels := [labels[t, y, x] for t, y, x in nbrs if labels[t, y, x] > 0]:
@@ -317,21 +111,114 @@ class Motion:
 
         components = defaultdict(list)
 
-        for f, r, c in product(range(self.depth), range(self.height), range(self.width)):
+        for f, r, c in product(range(self.number_of_frames), range(self.height), range(self.width)):
             if labels[f, r, c] > 0:
                 label = label_set.find(labels[f, r, c])
                 components[label].append((f, r, c))
 
-        if points < 1 and frames < 1 and width < 1 and height < 1:
-            return EventSpace.from_contours(self.video, [Contour(p) for p in components.values()], neighborhood, span)
+        return [TemporalContour(p) for p in components.values()]
+
+    def count_white_pixels(self, 
+                           contour: TemporalContour, 
+                           hls_video: np.ndarray, *,
+                           nlevels: int = 1,
+                           lightness_lower_bound: int = 200) -> int:
+            """Counts the number of pixels in a video considered white.
+            
+            Parameters
+            ----------
+            * contour - The collection of pixels to check
+            * hls_video - A video in HSL/HLS format
+            * nlevels - The resolution to use for the pixels in `contour`
+            * lightness_lower_bound - minimum (L)ightness necessary to be considered white, in range [0, 255]
+
+            Returns
+            -------
+            The number of points in `contour` considered white in `hsl_video`.
+            """
+            white_pixels = 0
+
+            for frame in contour.frames:
+                points = contour.points[:, 0] == frame
+                coords = contour.points[points,:,1:]
+                lightness_channel = hls_video[frame,:,:,1]
+                mask = cv.inRange(lightness_channel, lightness_lower_bound, 255)
+
+                for y, x in coords:
+                    if mask[y * nlevels, x * nlevels] == 255:
+                        white_pixels += 1
+
+            return white_pixels
+
+    def get_contour(self,
+                    contour: TemporalContour,
+                    video: np.ndarray, *, 
+                    nlevels: int = 1, 
+                    pad_frames: FramePadding = 0, 
+                    pad_region: PixelPadding = 0) -> np.ndarray:
+        """Pulls the part of a video corresponding to a contour.
         
-        filtered_events = []
+        Parameters
+            ----------
+            * contour - collection of pixels
+            * video - source video
+            * nlevels - resolution to use for the bounding rectangle of `contour`
+            * pad_frames - number of extra frames to add to start and/or end
+            * pad_region - number of pixels to add to bounding rectangle dimensions
 
-        for p in components.values():
-            if len(p) >= points:
-                e = Event(self.video, Contour(p))
+            Returns
+            -------
+            An array of frames from `video` trimmed to the region containing the pixels in `contour`.
+        """
+        region = contour.region.upsample(nlevels)
+        l, t, r, b = region.left, region.top, region.right, region.bottom
+        n, h, w = video.shape[:3]
+        frame_start_padding, frame_end_padding = (pad_frames, pad_frames) if isinstance(pad_frames, int) else pad_frames
 
-                if len(e.frames) >= frames and e.region.width >= width and e.region.height >= height:
-                    filtered_events.append(e)
+        if isinstance(pad_region, int):
+            pixels_l, pixels_t, pixels_r, pixels_b = pad_region, pad_region, pad_region, pad_region
+        elif len(pad_region) == 2:
+            pixels_l, pixels_t, pixels_r, pixels_b = pad_region[0], pad_region[1], pad_region[0], pad_region[1]
+        else:
+            pixels_l, pixels_t, pixels_r, pixels_b = pad_region
 
-        return EventSpace(filtered_events, neighborhood, span)
+        l = max(l - pixels_l, 0)
+        t = max(t - pixels_t, 0)
+        r = min(r + pixels_r, w - 1)
+        b = min(b + pixels_b, h - 1)
+        start_frame = max(contour.frames[0] - frame_start_padding, 0)
+        end_frame = min(contour.frames[-1] + frame_end_padding, n - 1)
+        frames = [*range(start_frame, contour.frames[0]), *contour.frames, *range(n, end_frame + 1)]
+
+        return np.array([video[f][t:(b + 1), l:(r + 1), :] for f in frames])
+    
+    def has_white_pixel(self, 
+                           contour: TemporalContour, 
+                           hls_video: np.ndarray, *,
+                           nlevels: int = 1,
+                           lightness_lower_bound: int = 200) -> int:
+            """Counts the number of pixels in a video considered white.
+            
+            Parameters
+            ----------
+            * contour - The collection of pixels to check
+            * hls_video - A video in HSL/HLS format
+            * nlevels - The resolution to use for the pixels in `contour`
+            * lightness_lower_bound - minimum (L)ightness necessary to be considered white, in range [0, 255]
+
+            Returns
+            -------
+            The number of points in `contour` considered white in `hsl_video`.
+            """
+            for frame in contour.frames:
+                points = contour.points[:, 0] == frame
+                coords = contour.points[points,1:]
+                lightness_channel = hls_video[frame,:,:,1]
+                mask = cv.inRange(lightness_channel, lightness_lower_bound, 255)
+
+                for y, x in coords:
+                    if mask[y * nlevels, x * nlevels] == 255:
+                        return True
+
+            return False
+    

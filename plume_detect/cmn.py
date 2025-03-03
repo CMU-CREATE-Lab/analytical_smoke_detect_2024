@@ -1,4 +1,5 @@
 import datetime
+import ffmpeg
 import json
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
@@ -160,43 +161,105 @@ def get_time(t: datetime.time):
         return t
 
 
-def video_to_html(video):
-    fig, ax = plt.subplots(1, 1)
+def make_video_div(src: str, metadata: list[str]) -> str:
+   return f"""
+<div class="video-container">
+  <video src="{src}" loop muted controls playbackRate=0.5></video>
+  <div class="label">{'<br>'.join(metadata)}</div>
+</div>
+"""
 
-    ax.set_axis_off()
 
-    ims = [[ax.imshow(video[i], animated=True)] for i in range(len(video))]
-    anim = animation.ArtistAnimation(fig, ims, interval=200, blit=True, repeat_delay=1000)
+def write_mp4_video(path: str, video: np.ndarray):
+    h, w = video.shape[1], video.shape[2]
 
-    plt.close()
+    process = (
+        ffmpeg
+        .input("pipe:", format="rawvideo", pix_fmt="rgb24", s=f"{w}x{h}")
+        .filter("pad", width="ceil(iw/2)*2", height="ceil(ih/2)*2", color="black")
+        .output(path, pix_fmt="yuv420p", vcodec="libx264", r=12, loglevel="quiet")
+        .overwrite_output()
+        .run_async(pipe_stdin=True)
+    )
 
-    return anim.to_jshtml()
+    for frame in video:
+        process.stdin.write(frame.tobytes())
 
-def videos_to_html(*videos) -> str:
-    fig, ax = plt.subplots(1, len(videos))
+    process.stdin.close()
+    process.wait()
 
-    for i in range(len(videos)):
-        ax[i].set_axis_off()
+def write_video_html(path: str, content: str, title: str = "") -> str:
+  html = f"""
+<html>
+  <head>
+    <script src="js/jquery-3.7.1.min.js"></script>
+    <style>
+      body {{margin:0px}}
+      #site-title {{
+        margin-bottom: 5px;
+        text-align: center;
+        width: 100%;
+      }}
+      .label {{
+        font-size: 17px;
+      }}
+      .video-container {{
+        display: inline-flex;
+        flex-flow: column nowrap;
+        margin: 3px;
+      }}
+    </style>
+  </head>
+  <body>
+  {f'<h1 id="site-title">{title}</h1>' if (title := title.strip()) else ''}
+  {content}
 
-    ims = [[ax[j].imshow(videos[j][i], animated=True) for j in range(len(videos))] for i in range(len(videos[0]))]
-    anim = animation.ArtistAnimation(fig, ims, interval=200, blit=True, repeat_delay=1000)
+    <script>
+      var ggg;
+      function fixupVideo(v) {{
+        console.log(v);
+        var d = v.wrap('<div/>');
+        console.log(d);
+        if (v.attr('playbackRate')) {{
+          v[0].playbackRate = parseFloat($(v).attr('playbackRate'));
+        }}
+        if (v.attr('trimRight')) {{
+          vvv = v;
+          ddd = d;
+        }}
+      }}
 
-    plt.close()
+      function init() {{
+        console.log('init');
+        let observer = new IntersectionObserver(
+          (entries, observer) => {{
+            for (entry of entries) {{
+              if (entry.isIntersecting) {{
+            console.log('play', entry.target);
+                entry.target.play();
+              }} else  {{
+          console.log('pause', entry.target);
+                entry.target.pause(); 
+        }}
+            }}
+          }},
+          {{threshold: 0}}
+        );
+        
+        $('img,video').each(function(i,v){{
+          fixupVideo($(v));
+          console.log('setting up', v);
+          observer.observe(v);
+        }});
+      }}
 
-    return anim.to_jshtml()
-
-def videos_to_html_stack(*videos) -> str:
-    fig, ax = plt.subplots(len(videos), 1)
-
-    for i in range(len(videos)):
-        ax[i].set_axis_off()
-
-    ims = [[ax[j].imshow(videos[j][i], animated=True) for j in range(len(videos))] for i in range(len(videos[0]))]
-    anim = animation.ArtistAnimation(fig, ims, interval=200, blit=True, repeat_delay=1000)
-
-    plt.close()
-
-    return anim.to_jshtml()
+      $(init);
+    </script>
+  </body>
+</html>
+"""
+  with open(path, "w") as htmlFile:
+    htmlFile.write(html)
 
 T = TypeVar('T')
 

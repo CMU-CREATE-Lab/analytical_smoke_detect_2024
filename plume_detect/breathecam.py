@@ -1,36 +1,17 @@
 import datetime
 import math
-from functools import lru_cache
 from itertools import product
 import numpy as np
 import re
 import requests
 
-from dataclasses import dataclass
-from typing import Callable, Literal, Union
+from typing import Callable, Union
 
-from .cmn import TIME_MACHINES, CAMERAS, decode_video_frames, get_camera_id, get_time
-from .motion import Motion
-from .view import View
+from cmn import TIME_MACHINES, CAMERAS, decode_video_frames, get_camera_id, get_time
+from motion import MotionAnalysis
+from view import View
 
 DateFormatter = Callable[[str], datetime.date]
-
-@dataclass
-class BreatheCamMetadata:
-    root_url: str
-    tile_root: str
-    day: str
-    capture_times: list[str]
-    levels: int
-    level_info: list
-    fps: int
-    width: int
-    height: int
-    tile_width: int
-    tile_height: int
-    r: dict
-    tm: dict
-
 
 class BreatheCam:
     def __init__(self, root_url: str):
@@ -72,7 +53,7 @@ class BreatheCam:
                  time: datetime.time,
                  view: Union[View, None] = None,
                  frames: int = 1,
-                 subsample: int = 1) -> np.ndarray:
+                 nlevels: int = 1) -> np.ndarray:
         day_str = day.strftime("%Y-%m-%d")
         start_time = f"{day_str} {get_time(time).strftime('%H:%M:%S')}"
         url = f"{TIME_MACHINES}/{CAMERAS[get_camera_id(loc)]}/{day_str}.timemachine"
@@ -87,7 +68,7 @@ class BreatheCam:
         if remaining_frames < frames:
             frames = remaining_frames
 
-        return cam.download_video(start_frame, frames, view or View.full(), subsample)
+        return cam.download_video(start_frame, frames, view or View.full(), nlevels)
 
     @property
     def capture_times(self):
@@ -109,6 +90,31 @@ class BreatheCam:
     def tile_width(self) -> int:
         return self.r["video_width"]
 
+    def analyze(self, 
+                time: datetime.time, 
+                view: Union[View, None] = None,
+                frames: int = 1, *,
+                nlevels: int = 1, 
+                background_subtractor):
+
+        if time.second < 3:
+            second = 57 + time.second
+
+            if time.minute == 0:
+                if time.hour == 0:
+                    raise Exception(f"Invalid start frame: {self.day.strftime('%Y-%m-%d')} {time.strftime('%H:%M:%S')}")
+                else:
+                    t = time.replace(hour=time.hour - 1, minute=59, second=second)
+            else:
+                t = time.replace(minute = time.minute - 1, second = second)
+        else:
+            t = time.replace(second=time.second - 3)
+
+        view = view or View.full()
+        video = self.download_video(time, frames, view, nlevels)
+        
+        return MotionAnalysis(video, background_subtractor=background_subtractor)
+    
     # Coordinates:  The View (rectangle) is in full-resolution coords
     # Internal to this function, the view is modified to match the subsample as the internal
     # coords are divided by subsample
@@ -169,34 +175,17 @@ class BreatheCam:
     def capture_time_to_frame(self, date: str) -> int:
         return self.tm["capture-times"].index(date)
 
-    def height(self, subsample: int = 1) -> int:
-        return int(math.ceil(self.r["height"] / subsample))
+    def height(self, nlevels: int = 1) -> int:
+        return int(math.ceil(self.r["height"] / nlevels))
 
-    def level_from_subsample(self, subsample: int) -> int:
-        assert ((subsample & (subsample - 1)) == 0)
+    def level_from_subsample(self, nlevels: int) -> int:
+        assert ((nlevels & (nlevels - 1)) == 0)
 
-        level = self.levels - subsample.bit_length()
+        level = self.levels - nlevels.bit_length()
 
-        assert level >= 0, f"Subsample {subsample} is too high for timemachine with {self.levels} levels."
+        assert level >= 0, f"Subsample {nlevels} is too high for timemachine with {self.levels} levels."
 
         return level
-
-    def metadata(self) -> BreatheCamMetadata:
-        return BreatheCamMetadata(
-            root_url=self.root_url,
-            tile_root=self.tile_root_url,
-            day=self.day,
-            capture_times=self.capture_times(),
-            levels=self.levels,
-            level_info=self.level_info(),
-            fps=self.fps,
-            width=self.width(),
-            height=self.height(),
-            tile_width=self.tile_width,
-            tile_height=self.tile_height,
-            r=self.r,
-            tm=self.tm
-        )
 
     def subsample_from_level(self, level: int) -> int:
         assert (level > 0) and ((self.levels - level) > 0)
@@ -206,79 +195,6 @@ class BreatheCam:
     def tile_url(self, level: int, tile_x: int, tile_y: int) -> str:
         return f"{self.tile_root_url}/{level}/{tile_y * 4}/{tile_x * 4}.mp4"
 
-    def width(self, subsample: int = 1) -> int:
-        return int(math.ceil(self.r["width"] / subsample))
-
-
-class MotionCapture:
-    def __init__(self, 
-                 loc: str, 
-                 day: datetime.date, 
-                 time: datetime.time, 
-                 view: Union[View, None] = None,
-                 frames: int = 1, 
-                 subsample: int = 1, *,
-                 detectShadows: bool = True,
-                 varThreshold: int = 16):
-        self.location = loc
-        self.day = day
-        self.time = time
-        self.view = view or View.full()
-        self.width = self.view.width
-        self.height = self.view.height
-        self.frames = frames
-        self.subsample = subsample
-        self.breathecam = BreatheCam.init_from(loc, day)
-        self.motion = Motion(
-            self.breathecam.download_video(time, frames + 1, view, subsample),
-            detectShadows=detectShadows,
-            varThreshold=varThreshold)
-
-    def capture(self, subsample: int):
-        if subsample == self.subsample:
-            return self
-        
-        return MotionCapture(self.location, self.day, self.time, self.view, self.frames, subsample)
+    def width(self, nlevels: int = 1) -> int:
+        return int(math.ceil(self.r["width"] / nlevels))
     
-    def download_video(self, nlevels: int = 1):
-        return self.breathecam.download_video(self.time, self.frames + 1, self.view, nlevels)
-
-    def event_space(self, *, neighborhood: Literal[4, 8] = 8, span: int = 3):
-        return self.motion.event_space(neighborhood=neighborhood, span=span)
-
-
-class MotionDetector:
-    def __init__(self, loc: str, day: datetime.date):
-        self.location = loc
-        self.day = day
-
-    @lru_cache
-    def analyze(self,
-                time: datetime.time,
-                view: Union[View, None] = None,
-                frames: int = 1,
-                subsample: int = 1, *,
-                detectShadows: bool = True,
-                varThreshold: int = 16):
-        if time.second < 3:
-            second = 57 + time.second
-
-            if time.minute == 0:
-                if time.hour == 0:
-                    raise Exception(f"Invalid start frame: {self.day.strftime('%Y-%m-%d')} {time.strftime('%H:%M:%S')}")
-                else:
-                    t = time.replace(hour=time.hour - 1, minute=59, second=second)
-            else:
-                t = time.replace(minute = time.minute - 1, second = second)
-        else:
-            t = time.replace(second=time.second - 3)
-
-        return MotionCapture(
-            self.location, 
-            self.day, 
-            t, 
-            view, 
-            frames, 
-            subsample, 
-            detectShadows=detectShadows, 
-            varThreshold=varThreshold)
