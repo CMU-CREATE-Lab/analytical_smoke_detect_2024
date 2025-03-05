@@ -3,6 +3,7 @@
 <head>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/keyboard-navigation.css') }}">
     <style>
       img {height:300px}
       body {margin:0px}
@@ -50,6 +51,23 @@
       #filter-controls label {
        margin-right: 10px;
       }
+      
+      /* Add keyboard shortcuts info box */
+      .keyboard-shortcuts {
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        background: #f8f8f8;
+        border: 1px solid #ddd;
+        padding: 8px 12px;
+        border-radius: 5px;
+        font-size: 12px;
+        opacity: 0.8;
+      }
+      .keyboard-shortcuts ul {
+        margin: 5px 0;
+        padding-left: 20px;
+      }
     </style>
 </head>
 
@@ -80,9 +98,21 @@
     </div>
   </div>
   {% endfor %}
+  
+  <div class="keyboard-shortcuts">
+    <strong>Keyboard Shortcuts:</strong>
+    <ul>
+      <li>Tab/Shift+Tab: Next/prev unchecked video</li>
+      <li>Left/Right: Navigate between videos</li>
+      <li>M: Toggle smoke</li>
+      <li>T: Toggle steam</li>
+      <li>H: Toggle shadow</li>
+      <li>O: Toggle other_motion</li>
+      <li>N: Toggle none</li>
+    </ul>
+  </div>
 
   <script>
-
       // TODO: change URL for production
       const socket = io.connect('http://127.0.0.1:5000');
 
@@ -202,9 +232,21 @@
         });
 
         loadFiltersFromURL(); // Apply filters from URL on page load
+
+        // Additional code to ensure the first video gets focused
+        setTimeout(function() {
+          // Check if any video is already focused
+          if ($('.video-container.focused').length === 0) {
+            // If not, trigger focus on the first video
+            if ($('.video-container').length > 0) {
+              $('.video-container').first().trigger('click');
+            }
+          }
+        }, 100);
       }
 
       $(init);
   </script>
+  <script src="{{ url_for('static', filename='js/keyboard-navigation.js') }}"></script>
 </body>
 </html>

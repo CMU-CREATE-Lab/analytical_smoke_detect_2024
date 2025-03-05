@@ -1,0 +1,49 @@
+.video-container.focused {
+    border: 2px solid #4CAF50;
+    background-color: rgba(76, 175, 80, 0.05);
+}
+
+.key-shortcut {
+    font-weight: normal;
+}
+
+.focused .key-shortcut {
+    font-weight: bold;
+}
+.video-container {
+    transition: all 0.3s ease;
+    position: relative;
+    border: 2px solid transparent;
+}
+
+.video-container.focused {
+    border: 2px solid #4CAF50;
+    box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+    background-color: rgba(76, 175, 80, 0.05);
+    z-index: 10;
+}
+
+.key-shortcut {
+    /* Hidden by default */
+    font-weight: normal;
+    text-decoration: none;
+}
+
+.key-shortcut.visible {
+    /* Visible when container is focused */
+    font-weight: bold;
+    text-decoration: underline;
+}
+
+.video-container .classifications {
+    transition: all 0.2s ease;
+}
+
+.video-container.focused .classifications {
+    background-color: rgba(255, 255, 255, 0.9);
+}
+
+/* Better visual focus state for checkboxes */
+.video-container.focused input[type="checkbox"] {
+    outline: 2px solid #4CAF50;
+}
